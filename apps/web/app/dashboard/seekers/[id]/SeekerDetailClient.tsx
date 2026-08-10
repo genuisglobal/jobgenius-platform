@@ -114,6 +114,30 @@ interface SeekerData {
   willing_to_work_weekends: boolean | null;
   preferred_shift: string | null;
   open_to_contract: boolean | null;
+  minimum_salary: number | null;
+  // EEO (voluntary self-identification)
+  eeo_gender: string | null;
+  eeo_race: string | null;
+  eeo_veteran_status: string | null;
+  eeo_disability_status: string | null;
+  // Background & legal
+  felony_conviction: boolean | null;
+  non_compete_subject: boolean | null;
+  consent_background_check: boolean | null;
+  consent_drug_screening: boolean | null;
+  // Assets & timeline
+  resume_url: string | null;
+  profile_photo_url: string | null;
+  onboarding_completed_at: string | null;
+  created_at: string | null;
+}
+
+interface SavedAnswer {
+  id: string;
+  question_key: string;
+  question_text: string;
+  answer: string;
+  updated_at: string | null;
 }
 
 interface MatchedJob {
@@ -435,6 +459,7 @@ export default function SeekerDetailClient({
   auditLogs = [],
   financial = EMPTY_FINANCIAL_DATA,
   screeningAnswers: initialScreeningAnswers = [],
+  savedAnswers = [],
   failureScreenshots = [],
   canReviewDeliveryCases = false,
 }: {
@@ -455,6 +480,7 @@ export default function SeekerDetailClient({
   auditLogs?: ProfileAuditLog[];
   financial?: FinancialData;
   screeningAnswers?: ScreeningAnswer[];
+  savedAnswers?: SavedAnswer[];
   failureScreenshots?: FailureScreenshot[];
   canReviewDeliveryCases?: boolean;
 }) {
@@ -582,7 +608,11 @@ export default function SeekerDetailClient({
             />
           )}
           {(activeTab === "profile" || activeTab === "reports") && (
-            <ProfileTab seeker={seeker} auditLogs={auditLogs} />
+            <ProfileTab
+              seeker={seeker}
+              auditLogs={auditLogs}
+              savedAnswers={savedAnswers}
+            />
           )}
           {activeTab === "financial" && (
             <FinancialTab financial={financial} />
@@ -1180,9 +1210,11 @@ function OverviewTab({
 function ProfileTab({
   seeker,
   auditLogs,
+  savedAnswers = [],
 }: {
   seeker: SeekerData;
   auditLogs: ProfileAuditLog[];
+  savedAnswers?: SavedAnswer[];
 }) {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysis, setAnalysis] = useState<{ analysis: string; rating: string } | null>(null);
@@ -2078,6 +2110,20 @@ function ProfileTab({
               </p>
             </div>
           )}
+          <div className="mt-3 pt-3 border-t">
+            <dl className="space-y-2">
+              <InfoRow label="Resume on file" value={seeker.resume_url} link />
+              <InfoRow label="Signed Up" value={dateLabel(seeker.created_at)} />
+              <InfoRow
+                label="Onboarding Completed"
+                value={
+                  seeker.onboarding_completed_at
+                    ? dateLabel(seeker.onboarding_completed_at)
+                    : "Not completed"
+                }
+              />
+            </dl>
+          </div>
         </Section>
 
         {/* Bio */}
@@ -2097,6 +2143,14 @@ function ProfileTab({
                 ? `$${(seeker.salary_min ?? 0).toLocaleString()} – $${(seeker.salary_max ?? 0).toLocaleString()}`
                 : "—"
             } />
+            <InfoRow
+              label="Minimum Salary"
+              value={
+                seeker.minimum_salary != null
+                  ? `$${seeker.minimum_salary.toLocaleString()}`
+                  : "—"
+              }
+            />
             <InfoRow label="Open to Relocation" value={boolLabel(seeker.open_to_relocation)} />
           </dl>
           {seeker.target_titles && seeker.target_titles.length > 0 && (
@@ -2137,6 +2191,16 @@ function ProfileTab({
                   <p key={i} className="text-sm text-gray-700">
                     <span className="font-medium capitalize">{lp.work_type}:</span> {lp.locations.join(", ")}
                   </p>
+                ))}
+              </div>
+            </div>
+          )}
+          {seeker.preferred_locations && seeker.preferred_locations.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-medium text-gray-500 mb-1">Preferred Locations</p>
+              <div className="flex flex-wrap gap-1.5">
+                {seeker.preferred_locations.map((loc) => (
+                  <span key={loc} className="px-2 py-0.5 bg-sky-100 text-sky-800 text-xs rounded-full">{loc}</span>
                 ))}
               </div>
             </div>
@@ -2230,6 +2294,7 @@ function ProfileTab({
           <dl className="space-y-2">
             <InfoRow label="Authorized to Work" value={boolLabel(seeker.authorized_to_work)} />
             <InfoRow label="Requires Visa Sponsorship" value={boolLabel(seeker.requires_visa_sponsorship)} />
+            <InfoRow label="Visa Status" value={seeker.visa_status || "—"} />
             <InfoRow label="Citizenship Status" value={seeker.citizenship_status || "—"} />
             <InfoRow label="Requires H1B Transfer" value={boolLabel(seeker.requires_h1b_transfer)} />
             <InfoRow label="Needs Employer Sponsorship" value={boolLabel(seeker.needs_employer_sponsorship)} />
@@ -2249,6 +2314,59 @@ function ProfileTab({
             <InfoRow label="Open to Contract" value={boolLabel(seeker.open_to_contract)} />
           </dl>
         </Section>
+
+        {/* Background & Legal */}
+        <Section title="Background & Legal">
+          <dl className="space-y-2">
+            <InfoRow label="Felony Conviction" value={boolLabel(seeker.felony_conviction)} />
+            <InfoRow label="Subject to Non-Compete" value={boolLabel(seeker.non_compete_subject)} />
+            <InfoRow label="Consents to Background Check" value={boolLabel(seeker.consent_background_check)} />
+            <InfoRow label="Consents to Drug Screening" value={boolLabel(seeker.consent_drug_screening)} />
+          </dl>
+        </Section>
+
+        {/* EEO — voluntary self-identification */}
+        <Section title="EEO / Voluntary Self-Identification">
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-3">
+            Voluntary disclosures used only to auto-fill employer EEO forms. Do not
+            use these answers when deciding which roles to submit this seeker to.
+          </p>
+          <dl className="space-y-2">
+            <InfoRow label="Gender" value={seeker.eeo_gender || "Not disclosed"} />
+            <InfoRow label="Race / Ethnicity" value={seeker.eeo_race || "Not disclosed"} />
+            <InfoRow label="Veteran Status" value={seeker.eeo_veteran_status || "Not disclosed"} />
+            <InfoRow label="Disability Status" value={seeker.eeo_disability_status || "Not disclosed"} />
+          </dl>
+        </Section>
+
+        {/* Saved application answers the seeker wrote in their portal */}
+        <div className="lg:col-span-2">
+          <Section title={`Saved Application Answers (${savedAnswers.length})`}>
+            {savedAnswers.length > 0 ? (
+              <div className="space-y-3">
+                {savedAnswers.map((answer) => (
+                  <div key={answer.id} className="p-3 bg-white rounded-lg border">
+                    <p className="text-sm font-medium text-gray-900">
+                      {answer.question_text}
+                    </p>
+                    <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">
+                      {answer.answer.trim() || "— not answered —"}
+                    </p>
+                    {answer.updated_at && (
+                      <p className="text-xs text-gray-400 mt-2">
+                        Updated {dateLabel(answer.updated_at)}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">
+                Seeker has not saved any application answers yet.
+              </p>
+            )}
+          </Section>
+        </div>
       </div>
     </div>
   );
@@ -5089,6 +5207,12 @@ function DebugScreenshotsTab({
 }
 
 // Utility components
+function dateLabel(value: string | null): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString();
+}
+
 function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="bg-gray-50 rounded-lg p-4">

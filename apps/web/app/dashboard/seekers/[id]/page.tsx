@@ -164,6 +164,13 @@ export default async function SeekerDetailPage({ params }: PageProps) {
     .order("created_at", { ascending: false })
     .limit(50);
 
+  // Load the seeker's own saved application answers (portal "Saved Answers")
+  const { data: savedAnswers } = await supabaseAdmin
+    .from("job_seeker_answers")
+    .select("id, question_key, question_text, answer, updated_at")
+    .eq("job_seeker_id", id)
+    .order("question_key");
+
   // Load screening answers
   const { data: screeningAnswers } = await supabaseAdmin
     .from("job_seeker_screening_answers")
@@ -275,6 +282,7 @@ export default async function SeekerDetailPage({ params }: PageProps) {
       inboundEmails={(inboundEmails || []) as unknown as Parameters<typeof SeekerDetailClient>[0]["inboundEmails"]}
       auditLogs={(auditLogs || []) as unknown as Parameters<typeof SeekerDetailClient>[0]["auditLogs"]}
       screeningAnswers={(screeningAnswers || []) as unknown as Parameters<typeof SeekerDetailClient>[0]["screeningAnswers"]}
+      savedAnswers={(savedAnswers || []) as unknown as Parameters<typeof SeekerDetailClient>[0]["savedAnswers"]}
       failureScreenshots={failureScreenshots as unknown as Parameters<typeof SeekerDetailClient>[0]["failureScreenshots"]}
       canReviewDeliveryCases={canReviewDeliveryCases}
       financial={{
