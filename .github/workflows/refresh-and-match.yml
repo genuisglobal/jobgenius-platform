@@ -21,11 +21,29 @@ jobs:
     name: Full job pipeline
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Without pipefail, `curl ... | jq .` reports the exit status of jq, so a
+    # failed curl still passes the step and the whole run goes green. That masked
+    # a three-month outage once already - do not drop this.
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
     env:
       WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
       OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
     steps:
+      - name: 0. Verify required secrets are configured
+        run: |
+          missing=()
+          [ -n "${WEB_BASE_URL}" ] || missing+=("WEB_BASE_URL")
+          [ -n "${CRON_SECRET}" ] || missing+=("CRON_SECRET")
+          [ -n "${OPS_API_KEY}" ] || missing+=("OPS_API_KEY")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing repository secrets: ${missing[*]}"
+            echo "Set them under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
       - name: 1. Refresh external jobs (-> external_jobs staging)
         run: |
           echo "Refreshing external jobs..."
