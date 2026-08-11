@@ -4,12 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 
 const NAV_LINKS = [
-  { href: "#how-it-works", label: "How It Works" },
-  { href: "#what-we-do", label: "What We Do" },
-  { href: "#referral-network", label: "Referral Network" },
-  { href: "#interview-prep", label: "Interview Prep" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#faq", label: "FAQ" },
+  { href: "/how-it-works", label: "How It Works" },
+  { href: "/hire", label: "Hire" },
+  { href: "/what-we-do", label: "What We Do" },
+  { href: "/referral-network", label: "Referral Network" },
+  { href: "/interview-prep", label: "Interview Prep" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/blog", label: "Blog" },
+  { href: "/faq", label: "FAQ" },
 ];
 
 export default function MobileNav() {
@@ -49,14 +51,14 @@ export default function MobileNav() {
 
             <nav className="flex-1 overflow-y-auto p-4 space-y-0.5">
               {NAV_LINKS.map((link) => (
-                <a
+                <Link
                   key={link.href}
                   href={link.href}
                   onClick={() => setOpen(false)}
                   className="block px-4 py-3 text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-lg font-medium transition-colors"
                 >
                   {link.label}
-                </a>
+                </Link>
               ))}
             </nav>
 

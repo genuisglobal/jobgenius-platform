@@ -1,38 +1,33 @@
-import { getCurrentUser, supabaseAdmin } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
+import { listManagedAccounts } from "@/lib/admin-account-management";
 import AccountsClient from "./AccountsClient";
 
 export default async function AccountsPage() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const isSuperAdmin = user.role === "superadmin";
+  const currentUserRole = user.role ?? "am";
 
-  // Get all account managers
-  const { data: accountManagers } = await supabaseAdmin
-    .from("account_managers")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const accounts = await listManagedAccounts();
 
-  // Get assignment counts per AM
-  const { data: assignmentCounts } = await supabaseAdmin
-    .from("job_seeker_assignments")
-    .select("account_manager_id");
-
-  const countMap = new Map<string, number>();
-  for (const a of assignmentCounts || []) {
-    countMap.set(a.account_manager_id, (countMap.get(a.account_manager_id) || 0) + 1);
-  }
-
-  const amsWithCounts = (accountManagers || []).map((am) => ({
-    ...am,
-    assignmentCount: countMap.get(am.id) || 0,
-  }));
+  const pendingAccounts = accounts.filter(
+    (account) => account.userType === "am" && account.status === "pending"
+  );
 
   return (
     <AccountsClient
-      accountManagers={amsWithCounts}
-      isSuperAdmin={isSuperAdmin}
+      accounts={accounts}
+      pendingCount={pendingAccounts.length}
+      isSuperAdmin={currentUserRole === "superadmin"}
       currentUserId={user.id}
+      activeAdminCount={
+        accounts.filter(
+          (account) =>
+            account.userType === "am" &&
+            account.authId &&
+            (account.role === "admin" || account.role === "superadmin")
+        ).length
+      }
     />
   );
 }

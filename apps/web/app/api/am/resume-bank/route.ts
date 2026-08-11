@@ -162,11 +162,15 @@ async function createResumeVersion(params: {
   }
 
   if (params.makeDefault) {
-    await supabaseAdmin
+    const { error: clearDefaultError } = await supabaseAdmin
       .from("resume_bank_versions")
       .update({ is_default: false, updated_at: new Date().toISOString() })
       .eq("job_seeker_id", params.jobSeekerId)
       .eq("status", "active");
+
+    if (clearDefaultError) {
+      console.error("[resume-bank] failed to clear default flags:", clearDefaultError);
+    }
   }
 
   const nowIso = new Date().toISOString();
@@ -272,7 +276,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const jobSeekerId = String(body.job_seeker_id ?? "").trim();
   const fromJobPostId = String(body.from_job_post_id ?? "").trim() || null;
   const rawName = String(body.name ?? "").trim();
@@ -360,7 +369,12 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const action = String(body.action ?? "").trim();
   const jobSeekerId = String(body.job_seeker_id ?? "").trim();
 
@@ -390,11 +404,15 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Resume version not found." }, { status: 404 });
     }
 
-    await supabaseAdmin
+    const { error: clearDefaultError } = await supabaseAdmin
       .from("resume_bank_versions")
       .update({ is_default: false, updated_at: new Date().toISOString() })
       .eq("job_seeker_id", jobSeekerId)
       .eq("status", "active");
+
+    if (clearDefaultError) {
+      console.error("[resume-bank] failed to clear default flags:", clearDefaultError);
+    }
 
     const { error } = await supabaseAdmin
       .from("resume_bank_versions")
@@ -533,19 +551,27 @@ export async function PATCH(request: Request) {
     const makeDefault = Boolean(body.make_default);
 
     if (makeDefault) {
-      await supabaseAdmin
+      const { error: clearErr } = await supabaseAdmin
         .from("resume_bank_versions")
         .update({ is_default: false, updated_at: new Date().toISOString() })
         .eq("job_seeker_id", jobSeekerId)
         .eq("status", "active")
         .neq("id", versionId);
 
-      await supabaseAdmin
+      if (clearErr) {
+        console.error("[resume-bank] failed to clear default flags:", clearErr);
+      }
+
+      const { error: setDefaultErr } = await supabaseAdmin
         .from("resume_bank_versions")
         .update({ is_default: true, updated_at: new Date().toISOString() })
         .eq("id", versionId)
         .eq("job_seeker_id", jobSeekerId)
         .eq("status", "active");
+
+      if (setDefaultErr) {
+        console.error("[resume-bank] failed to set default flag:", setDefaultErr);
+      }
     }
 
     if (makeDefault || updatedVersion.is_default) {

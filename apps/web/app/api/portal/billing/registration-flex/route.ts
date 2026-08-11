@@ -413,7 +413,7 @@ export async function POST(request: Request) {
           `,
           job_seeker_id: auth.user.id,
           template_key: "billing-registration-flex-requested",
-        }).catch(() => null)
+        }).catch((err) => { console.error("[billing] send flex request email failed:", err); return null; })
       )
     );
   }

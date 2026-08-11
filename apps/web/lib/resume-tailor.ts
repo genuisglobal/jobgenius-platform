@@ -1,5 +1,16 @@
 import { getOpenAIClient, OPENAI_MODEL } from "./openai";
 import type { StructuredResume } from "./resume-templates/types";
+import { scoreResumeSkillCoverage, type SkillCoverage } from "./resume-score";
+import { lintTailoredResume, type ResumeSafetyResult } from "./resume-safety";
+
+// Resume tailoring benefits from a stronger model than the default mini.
+// Override with RESUME_TAILOR_MODEL (e.g. gpt-4o) without touching matching.
+const RESUME_MODEL = process.env.RESUME_TAILOR_MODEL || OPENAI_MODEL;
+
+export interface TailorCoverage {
+  before: SkillCoverage;
+  after: SkillCoverage;
+}
 
 interface TailorResumeInput {
   resumeText: string;
@@ -29,6 +40,10 @@ export interface TailorResumeStructuredResult {
   tailoredData: StructuredResume;
   tailoredText: string;
   changesSummary: string;
+  /** Before/after skill coverage. Present for job-targeted tailoring. */
+  coverage?: TailorCoverage;
+  /** Deterministic safety check (fabrication, identity, stuffing, length). */
+  safety?: ResumeSafetyResult;
 }
 
 export interface OptimizeBaseResumeStructuredInput {
@@ -99,7 +114,7 @@ export async function tailorResume(input: TailorResumeInput): Promise<TailorResu
   ].filter(Boolean).join("\n\n");
 
   const response = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
+    model: RESUME_MODEL,
     messages: [
       {
         role: "system",
@@ -297,20 +312,35 @@ export async function tailorResumeStructured(
     skillsSection,
   ].filter(Boolean).join("\n\n");
 
+  // Measure the starting keyword gap so the model can aim at it (truthfully)
+  // and we can report a before/after coverage delta.
+  const before = scoreResumeSkillCoverage({
+    resumeText: structuredResumeToText(input.baseResume),
+    resumeSkills: input.baseResume.skills,
+    requiredSkills: input.requiredSkills,
+    preferredSkills: input.preferredSkills,
+  });
+
+  const gapHint =
+    before.requiredMissing.length || before.preferredMissing.length
+      ? `\n\nKeyword gap to close — surface these ONLY where the candidate has genuine evidence in the base resume (real experience or a close equivalent). NEVER fabricate:\n- Missing required: ${before.requiredMissing.join(", ") || "none"}\n- Missing preferred: ${before.preferredMissing.join(", ") || "none"}\nWhere the experience is real, mirror the job's exact terminology in the summary, skills list, and relevant bullets.`
+      : "";
+
   const response = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
+    model: RESUME_MODEL,
     messages: [
       {
         role: "system",
-        content: `You are a professional resume writer. Tailor the candidate's structured resume JSON to better match the job posting.
+        content: `You are an expert ATS resume writer. Tailor the candidate's structured resume JSON to better match the job posting and pass automated screening.
 
 Rules:
-- Reorder and emphasize relevant experience and skills
-- Adjust language to mirror the job posting's terminology
+- Reorder and emphasize the most relevant experience and skills first
+- Mirror the job posting's exact terminology and keywords (for genuine experience only)
+- Lead bullets with strong action verbs; keep quantified outcomes the source supports
 - Highlight transferable skills that match the job requirements
-- NEVER fabricate experience, skills, or qualifications
-- NEVER remove truthful information, only adjust emphasis and ordering
-- Keep the resume professional and concise
+- NEVER fabricate experience, skills, certifications, or qualifications
+- NEVER remove truthful information, only adjust emphasis, wording, and ordering
+- No keyword stuffing — keywords must read naturally in context
 - Always return all schema fields (even when empty arrays/empty string/null as appropriate)
 - If excluded fields are provided, keep those fields empty/null
 
@@ -320,7 +350,7 @@ Respond with valid JSON containing two fields:
       },
       {
         role: "user",
-        content: `Tailor this resume for the following job:\n\n${jobContext}\n\n---\n\nOriginal Resume (JSON):\n${JSON.stringify(input.baseResume)}${excludedHint}`,
+        content: `Tailor this resume for the following job:\n\n${jobContext}${gapHint}\n\n---\n\nOriginal Resume (JSON):\n${JSON.stringify(input.baseResume)}${excludedHint}`,
       },
     ],
     response_format: { type: "json_object" },
@@ -342,10 +372,20 @@ Respond with valid JSON containing two fields:
     excludedFields
   );
 
+  const tailoredText = structuredResumeToText(tailoredData);
+  const after = scoreResumeSkillCoverage({
+    resumeText: tailoredText,
+    resumeSkills: tailoredData.skills,
+    requiredSkills: input.requiredSkills,
+    preferredSkills: input.preferredSkills,
+  });
+
   return {
     tailoredData,
-    tailoredText: structuredResumeToText(tailoredData),
+    tailoredText,
     changesSummary: parsed.changes_summary,
+    coverage: { before, after },
+    safety: lintTailoredResume(input.baseResume, tailoredData),
   };
 }
 
@@ -375,7 +415,7 @@ export async function optimizeBaseResumeStructured(
     .join("\n");
 
   const response = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
+    model: RESUME_MODEL,
     messages: [
       {
         role: "system",
@@ -424,6 +464,7 @@ Respond with valid JSON containing:
     tailoredData,
     tailoredText: structuredResumeToText(tailoredData),
     changesSummary: parsed.changes_summary,
+    safety: lintTailoredResume(input.baseResume, tailoredData),
   };
 }
 
@@ -437,7 +478,7 @@ export async function refineResumeStructuredWithGuidance(
       ? `\nExcluded fields (must be empty/null): ${excludedFields.join(", ")}`
       : "";
   const response = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
+    model: RESUME_MODEL,
     messages: [
       {
         role: "system",
@@ -485,6 +526,7 @@ Respond with valid JSON containing:
     tailoredData,
     tailoredText: structuredResumeToText(tailoredData),
     changesSummary: parsed.changes_summary,
+    safety: lintTailoredResume(input.baseResume, tailoredData),
   };
 }
 

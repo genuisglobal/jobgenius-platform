@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { isAdminRole, normalizeAMRole } from "@/lib/auth/roles";
+import {
+  isAdminRole,
+  isFinanceRole,
+  isPeopleManagerRole,
+  normalizeAMRole,
+} from "@/lib/auth/roles";
 
 interface NavItem {
   href: string;
@@ -23,11 +28,15 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     title: "Overview",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: "home", exact: true },
+      { href: "/dashboard/copilot", label: "Control Center", icon: "chart", exact: true },
+      { href: "/dashboard/today", label: "Today", icon: "inbox", exact: true },
+      { href: "/dashboard/notifications", label: "Notifications", icon: "alert", exact: true },
     ],
   },
   {
     title: "Job Seekers",
     items: [
+      { href: "/dashboard/delivery", label: "Delivery Board", icon: "briefcase" },
       { href: "/dashboard/seekers", label: "My Seekers", icon: "users" },
     ],
   },
@@ -36,6 +45,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/dashboard/pipeline", label: "Job Hub", icon: "briefcase" },
       { href: "/dashboard/attention", label: "Needs Attention", icon: "alert" },
+      { href: "/dashboard/apply-health", label: "Apply Health", icon: "chart" },
     ],
   },
   {
@@ -43,6 +53,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/dashboard/network", label: "Network Hub", icon: "network" },
       { href: "/dashboard/outreach", label: "Outreach CRM", icon: "mail" },
+      { href: "/dashboard/outreach/scheduling", label: "Scheduling Links", icon: "calendar" },
     ],
   },
   {
@@ -57,12 +68,35 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     title: "Messaging",
     items: [
       { href: "/dashboard/inbox", label: "Inbox", icon: "inbox" },
+      { href: "/dashboard/client-reports", label: "Client Reports", icon: "document" },
+      { href: "/dashboard/follow-ups", label: "Follow-ups", icon: "mail" },
     ],
   },
   {
     title: "Performance",
     items: [
       { href: "/dashboard/performance", label: "My Performance", icon: "chart" },
+      { href: "/dashboard/me/payslips", label: "My Payslips", icon: "credit-card" },
+    ],
+  },
+  {
+    title: "Reporting",
+    items: [
+      { href: "/dashboard/work-reports/me", label: "My Work Report", icon: "document" },
+      { href: "/dashboard/work-reports", label: "Team Reports", icon: "chart" },
+    ],
+  },
+  {
+    title: "My Work",
+    items: [
+      { href: "/dashboard/me/work", label: "Employee Hub", icon: "briefcase" },
+      { href: "/dashboard/me/onboarding", label: "Onboarding", icon: "check" },
+      { href: "/dashboard/me/permissions", label: "Permissions", icon: "calendar" },
+      { href: "/dashboard/me/performance", label: "Scorecards", icon: "chart" },
+      { href: "/dashboard/me/probation", label: "Probation", icon: "clock" },
+      { href: "/dashboard/me/career", label: "Career Path", icon: "academic" },
+      { href: "/dashboard/me/bonuses", label: "Bonuses", icon: "gift" },
+      { href: "/dashboard/me/social", label: "Social Fund", icon: "calendar" },
     ],
   },
   {
@@ -78,14 +112,61 @@ const ADMIN_NAV_SECTION: NavSection = {
   adminOnly: true,
   items: [
     { href: "/dashboard/admin", label: "Admin Overview", icon: "shield", exact: true },
-    { href: "/dashboard/admin/accounts", label: "Account Managers", icon: "user-cog" },
+    { href: "/dashboard/admin/accounts", label: "User Accounts", icon: "user-cog" },
     { href: "/dashboard/admin/job-seekers", label: "All Job Seekers", icon: "users-all" },
+    { href: "/dashboard/admin/leads", label: "Lead Queue", icon: "phone" },
+    { href: "/dashboard/admin/hiring-partners", label: "Hiring Requests", icon: "briefcase" },
+    { href: "/dashboard/admin/intake", label: "Intake Queue", icon: "queue" },
+    { href: "/dashboard/admin/capacity", label: "AM Capacity", icon: "chart" },
     { href: "/dashboard/admin/assignments", label: "Assignments", icon: "link" },
     { href: "/dashboard/admin/broadcast", label: "Broadcast", icon: "megaphone" },
     { href: "/dashboard/admin/analytics", label: "Analytics", icon: "analytics" },
+    { href: "/dashboard/admin/outcomes", label: "Outcomes", icon: "analytics" },
+    { href: "/dashboard/admin/notifications", label: "Internal Notifications", icon: "alert" },
+    { href: "/dashboard/admin/application-analytics", label: "App Analytics", icon: "analytics" },
+    { href: "/dashboard/admin/adapter-health", label: "Adapter Health", icon: "analytics" },
+    { href: "/dashboard/admin/qa", label: "QA Review", icon: "check" },
+    { href: "/dashboard/admin/automation", label: "Kill Switches", icon: "alert" },
+    { href: "/dashboard/admin/ai-usage", label: "AI Usage", icon: "analytics" },
+    { href: "/dashboard/admin/ai-outputs", label: "AI Outputs", icon: "check" },
+    { href: "/dashboard/admin/audit", label: "Audit Log", icon: "document" },
+    { href: "/dashboard/admin/career-pages", label: "Career Pages", icon: "globe" },
+    { href: "/dashboard/admin/host-rules", label: "Host Rules", icon: "globe" },
+    { href: "/dashboard/admin/failure-diagnoses", label: "Failure Diagnoses", icon: "alert" },
+    { href: "/dashboard/admin/canaries", label: "Canaries", icon: "check" },
+    { href: "/dashboard/admin/drift", label: "Drift Center", icon: "alert" },
+    { href: "/dashboard/admin/ranker", label: "Learned Ranker", icon: "analytics" },
+    { href: "/dashboard/admin/runners", label: "Runner Fleet", icon: "chart" },
     { href: "/dashboard/admin/voice", label: "Voice Automation", icon: "phone" },
     { href: "/dashboard/admin/reports", label: "Report Settings", icon: "document" },
+    { href: "/dashboard/admin/referrals", label: "Referrals", icon: "gift" },
+    { href: "/dashboard/admin/payroll", label: "Payroll", icon: "credit-card", exact: true },
+    { href: "/dashboard/admin/payroll/periods", label: "Pay Periods", icon: "calendar" },
     { href: "/dashboard/billing", label: "Billing", icon: "credit-card" },
+  ],
+};
+
+const PEOPLE_NAV_SECTION: NavSection = {
+  title: "People Ops",
+  items: [
+    { href: "/dashboard/people", label: "People Overview", icon: "users-all", exact: true },
+    { href: "/dashboard/people/employees", label: "Employees", icon: "users" },
+    { href: "/dashboard/people/onboarding", label: "Onboarding Queue", icon: "queue" },
+    { href: "/dashboard/people/permissions", label: "Permissions", icon: "calendar" },
+    { href: "/dashboard/people/scorecards", label: "Scorecards", icon: "chart" },
+    { href: "/dashboard/people/probation", label: "Probation", icon: "clock" },
+    { href: "/dashboard/people/discipline", label: "Discipline", icon: "alert" },
+    { href: "/dashboard/people/leadership", label: "Leadership", icon: "academic" },
+    { href: "/dashboard/people/social-leads", label: "Social Leads", icon: "calendar" },
+  ],
+};
+
+const FINANCE_NAV_SECTION: NavSection = {
+  title: "Finance",
+  items: [
+    { href: "/dashboard/finance", label: "Finance Overview", icon: "credit-card", exact: true },
+    { href: "/dashboard/finance/bonuses", label: "Bonuses", icon: "gift" },
+    { href: "/dashboard/finance/social-fund", label: "Social Fund", icon: "calendar" },
   ],
 };
 
@@ -270,6 +351,12 @@ function NavIcon({ icon, className }: { icon: string; className?: string }) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
       );
+    case "gift":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -292,6 +379,8 @@ export default function DashboardShell({
   const bellRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = isAdminRole(userRole);
+  const canAccessPeople = isPeopleManagerRole(userRole);
+  const canAccessFinance = isFinanceRole(userRole) || canAccessPeople;
 
   // Close bell panel on outside click
   useEffect(() => {
@@ -336,10 +425,27 @@ export default function DashboardShell({
   const navSections = useMemo(() => {
     if (isAdmin) {
       const [overviewSection, ...remainingSections] = BASE_NAV_SECTIONS;
-      return [overviewSection, ADMIN_NAV_SECTION, ...remainingSections];
+      return [
+        overviewSection,
+        ADMIN_NAV_SECTION,
+        FINANCE_NAV_SECTION,
+        PEOPLE_NAV_SECTION,
+        ...remainingSections,
+      ];
+    }
+    if (canAccessPeople) {
+      const [overviewSection, ...remainingSections] = BASE_NAV_SECTIONS;
+      return [overviewSection, PEOPLE_NAV_SECTION, FINANCE_NAV_SECTION, ...remainingSections];
+    }
+    if (canAccessFinance) {
+      return BASE_NAV_SECTIONS.filter((section) =>
+        ["Overview", "My Work", "Performance"].includes(section.title)
+      ).flatMap((section, index) =>
+        index === 0 ? [section, FINANCE_NAV_SECTION] : [section]
+      );
     }
     return BASE_NAV_SECTIONS;
-  }, [isAdmin]);
+  }, [canAccessFinance, canAccessPeople, isAdmin]);
 
   async function dismissAnnouncement(id: string) {
     setAmNotifications((prev) =>
@@ -351,7 +457,7 @@ export default function DashboardShell({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ announcement_id: id }),
-    }).catch(() => {});
+    }).catch((err) => console.error("[am-dashboard] mark announcement read failed:", err));
   }
 
   const handleLogout = async () => {
@@ -371,6 +477,10 @@ export default function DashboardShell({
       ? "Super Admin"
       : normalizedRole === "admin"
       ? "Admin"
+      : normalizedRole === "ops_manager"
+      ? "Operations Manager"
+      : normalizedRole === "accountant"
+      ? "Accountant"
       : "Account Manager";
 
   return (
@@ -423,7 +533,7 @@ export default function DashboardShell({
                         active
                           ? section.adminOnly
                             ? "bg-purple-600 text-white"
-                            : "bg-blue-600 text-white"
+                            : "bg-violet-600 text-white"
                           : "text-gray-300 hover:bg-gray-800 hover:text-white"
                       }`}
                     >
@@ -501,7 +611,7 @@ export default function DashboardShell({
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               {item.seeker_name && (
-                                <p className="text-xs font-semibold text-blue-600 truncate">{item.seeker_name}</p>
+                                <p className="text-xs font-semibold text-violet-600 truncate">{item.seeker_name}</p>
                               )}
                               <p className="text-sm font-medium text-gray-900 truncate">{item.subject}</p>
                             </div>
@@ -517,7 +627,7 @@ export default function DashboardShell({
                     <Link
                       href="/dashboard/seekers"
                       onClick={() => setBellOpen(false)}
-                      className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                      className="text-xs font-medium text-violet-600 hover:text-violet-700"
                     >
                       View all seekers →
                     </Link>
@@ -547,7 +657,7 @@ export default function DashboardShell({
           {(amNotifications?.unread_announcements ?? []).map((ann) => (
             <div
               key={ann.id}
-              className="mb-4 bg-blue-600 text-white rounded-xl px-5 py-4 flex items-start justify-between gap-4 shadow-sm"
+              className="mb-4 bg-violet-600 text-white rounded-xl px-5 py-4 flex items-start justify-between gap-4 shadow-sm"
             >
               <div className="flex items-start gap-3 min-w-0">
                 <svg className="w-5 h-5 flex-shrink-0 mt-0.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -555,12 +665,12 @@ export default function DashboardShell({
                 </svg>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">{ann.subject}</p>
-                  <p className="text-sm text-blue-100 mt-0.5 whitespace-pre-line">{ann.body}</p>
+                  <p className="text-sm text-violet-100 mt-0.5 whitespace-pre-line">{ann.body}</p>
                 </div>
               </div>
               <button
                 onClick={() => dismissAnnouncement(ann.id)}
-                className="flex-shrink-0 p-1 rounded hover:bg-blue-500 transition-colors"
+                className="flex-shrink-0 p-1 rounded hover:bg-violet-500 transition-colors"
                 aria-label="Dismiss"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

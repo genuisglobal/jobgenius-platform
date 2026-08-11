@@ -18,7 +18,7 @@ const AUDIENCE_LABELS: Record<TargetAudience, string> = {
 };
 
 function audienceColor(audience: string) {
-  if (audience === "all_job_seekers") return "bg-blue-100 text-blue-700";
+  if (audience === "all_job_seekers") return "bg-violet-100 text-violet-700";
   if (audience === "all_account_managers") return "bg-purple-100 text-purple-700";
   return "bg-green-100 text-green-700";
 }
@@ -141,7 +141,7 @@ export default function BroadcastClient({
                     key={a}
                     className={`flex items-center justify-between gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
                       audience === a
-                        ? "border-blue-500 bg-blue-50"
+                        ? "border-violet-500 bg-violet-50"
                         : "border-gray-200 hover:bg-gray-50"
                     }`}
                   >
@@ -152,7 +152,7 @@ export default function BroadcastClient({
                         value={a}
                         checked={audience === a}
                         onChange={() => setAudience(a)}
-                        className="accent-blue-600"
+                        className="accent-violet-600"
                       />
                       <span className="text-sm font-medium text-gray-900">
                         {AUDIENCE_LABELS[a]}
@@ -181,7 +181,7 @@ export default function BroadcastClient({
               onChange={(e) => setSubject(e.target.value)}
               placeholder="e.g. Platform update: New features available"
               maxLength={200}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
             />
             <p className="text-xs text-gray-400 mt-1 text-right">{subject.length}/200</p>
           </div>
@@ -193,7 +193,7 @@ export default function BroadcastClient({
               <button
                 type="button"
                 onClick={() => setPreview((p) => !p)}
-                className="text-xs text-blue-600 hover:text-blue-700"
+                className="text-xs text-violet-600 hover:text-violet-700"
               >
                 {preview ? "Edit" : "Preview"}
               </button>
@@ -208,7 +208,7 @@ export default function BroadcastClient({
                 onChange={(e) => setBody(e.target.value)}
                 placeholder="Write your message here…"
                 rows={7}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-y"
               />
             )}
           </div>
@@ -219,7 +219,7 @@ export default function BroadcastClient({
               type="button"
               onClick={() => setSendEmail((v) => !v)}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                sendEmail ? "bg-blue-600" : "bg-gray-200"
+                sendEmail ? "bg-violet-600" : "bg-gray-200"
               }`}
             >
               <span
@@ -239,7 +239,7 @@ export default function BroadcastClient({
             type="button"
             disabled={!subject.trim() || !body.trim() || sending}
             onClick={() => setConfirmOpen(true)}
-            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-semibold rounded-lg transition-colors"
+            className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-semibold rounded-lg transition-colors"
           >
             {sending ? "Sending…" : `Send to ${targetCount.toLocaleString()} recipients`}
           </button>

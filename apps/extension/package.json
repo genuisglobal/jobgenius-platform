@@ -1,0 +1,11 @@
+{
+  "name": "jobgenius-extension-tests",
+  "private": true,
+  "description": "Real-browser (Playwright) fixture tests for the extension runner. The extension itself ships as plain JS with no build step — this package exists only for the test harness.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

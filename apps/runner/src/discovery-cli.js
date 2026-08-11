@@ -22,6 +22,8 @@
  *   node src/discovery-cli.js greenhouse --company="stripe" --save
  *   node src/discovery-cli.js lever --company="netflix" --save
  *   node src/discovery-cli.js ashby --company="ramp" --save
+ *   node src/discovery-cli.js workday "https://wd5.myworkdaysite.com/recruiting/company/careers" --save
+ *   node src/discovery-cli.js smartrecruiters "https://jobs.smartrecruiters.com/Stripe" --save
  *
  * Options:
  *   --max-pages=N       Maximum pages to scrape (default: 5, scraper only)
@@ -34,7 +36,7 @@
  *   --location=STR      Location filter (API adapters)
  *   --category=STR      Job category (remotive, themuse)
  *   --level=STR         Experience level (themuse)
- *   --company=STR       Company slug (greenhouse, lever, ashby)
+ *   --company=STR       Company slug/identifier (greenhouse, lever, ashby, smartrecruiters)
  */
 
 import { scrapeJobs } from './discovery/scraper.js';
@@ -150,6 +152,16 @@ const ADAPTER_SOURCES = {
     base_url: 'https://jobs.ashbyhq.com/api/non-user-graphql',
     adapter_config: {}, auth_config: {}, selectors: {},
   },
+  workday: {
+    id: 'workday', name: 'workday', source_type: 'feed',
+    base_url: 'https://www.myworkdayjobs.com',
+    adapter_config: {}, auth_config: {}, selectors: {},
+  },
+  smartrecruiters: {
+    id: 'smartrecruiters', name: 'smartrecruiters', source_type: 'feed',
+    base_url: 'https://api.smartrecruiters.com/v1/companies',
+    adapter_config: {}, auth_config: {}, selectors: {},
+  },
   'hn-hiring': {
     id: 'hn-hiring', name: 'hn-hiring', source_type: 'api',
     base_url: 'https://hn.algolia.com/api/v1',
@@ -262,6 +274,7 @@ async function main() {
       const searchConfig = {
         maxJobs: options.maxJobs,
       };
+      if (searchUrl) searchConfig.searchUrl = searchUrl;
       if (options.keywords) searchConfig.keywords = options.keywords;
       if (options.location) searchConfig.location = options.location;
       if (options.category) searchConfig.category = options.category;
@@ -391,10 +404,12 @@ API Adapter Sources (no URL needed):
   arbeitnow   Arbeitnow remote-first jobs (no auth)
   hn-hiring   Hacker News "Who's Hiring" thread (no auth)
 
-ATS Feed Sources (need --company flag):
+ATS Feed Sources (need a company flag or public career URL):
   greenhouse  Greenhouse career boards (no auth)
   lever       Lever career pages (no auth)
   ashby       Ashby job boards (no auth)
+  workday     Workday job feeds via company career URL (no auth)
+  smartrecruiters SmartRecruiters company postings (no auth)
 
 Options:
   --max-pages=N       Maximum pages to scrape (default: 5, scraper only)
@@ -407,7 +422,7 @@ Options:
   --location=STR      Location filter (adzuna, themuse)
   --category=STR      Job category (remotive, themuse)
   --level=STR         Experience level (themuse)
-  --company=STR       Company slug (greenhouse, lever, ashby)
+  --company=STR       Company slug/identifier (greenhouse, lever, ashby, smartrecruiters)
 
 Examples:
   # Scrape LinkedIn for React jobs
@@ -427,6 +442,12 @@ Examples:
 
   # Fetch Ramp jobs from Ashby
   node src/discovery-cli.js ashby --company="ramp" --save
+
+  # Fetch jobs from a Workday careers site
+  node src/discovery-cli.js workday "https://wd5.myworkdaysite.com/recruiting/company/careers" --save
+
+  # Fetch jobs from Stripe's SmartRecruiters page
+  node src/discovery-cli.js smartrecruiters "https://jobs.smartrecruiters.com/Stripe" --save
 
   # Parse current HN "Who's Hiring" thread
   node src/discovery-cli.js hn-hiring --save

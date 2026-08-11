@@ -41,12 +41,16 @@ export async function GET(
   }
 
   // Mark AM messages as read
-  await supabaseAdmin
+  const { error: markReadError } = await supabaseAdmin
     .from("conversation_messages")
     .update({ read_at: new Date().toISOString() })
     .eq("conversation_id", params.id)
     .eq("sender_type", "account_manager")
     .is("read_at", null);
+
+  if (markReadError) {
+    console.error("[portal:conversations] failed to mark messages read:", markReadError);
+  }
 
   return Response.json({ messages: messages ?? [] });
 }
@@ -103,10 +107,14 @@ export async function POST(
   }
 
   // Update conversation updated_at
-  await supabaseAdmin
+  const { error: convUpdateError } = await supabaseAdmin
     .from("conversations")
     .update({ updated_at: new Date().toISOString() })
     .eq("id", params.id);
+
+  if (convUpdateError) {
+    console.error("[portal:conversations] failed to update conversation timestamp:", convUpdateError);
+  }
 
   // Run side-effects in parallel (fire-and-forget)
   const sideEffects: Promise<unknown>[] = [];
@@ -277,10 +285,14 @@ export async function PATCH(
     statusMessage = insertedStatusMessage ?? null;
   }
 
-  await supabaseAdmin
+  const { error: patchConvError } = await supabaseAdmin
     .from("conversations")
     .update({ updated_at: nowIso })
     .eq("id", params.id);
+
+  if (patchConvError) {
+    console.error("[portal:conversations] failed to update conversation timestamp:", patchConvError);
+  }
 
   // Notify AM about task status change (fire-and-forget)
   if (
@@ -316,7 +328,7 @@ export async function PATCH(
           });
         }
       })
-      .catch(() => {});
+      .catch((err) => console.error("[conversations:messages] notification failed:", err));
   }
 
   return Response.json({

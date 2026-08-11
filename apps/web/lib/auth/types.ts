@@ -9,7 +9,7 @@ export interface AuthUser {
   email: string;
   userType: UserType;
   name?: string;
-  role?: string; // For AMs: 'am', 'admin', 'superadmin'
+  role?: string; // For internal staff: 'am', 'ops_manager', 'accountant', 'admin', 'superadmin'
   status?: string; // For AMs: 'pending', 'approved', 'rejected'
   amCode?: string; // For AMs: unique code for extension login
 }

@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/auth";
 import { verifyExtensionSession } from "@/lib/extension-auth";
 import { enqueueBackgroundJob } from "@/lib/background-jobs";
-import { buildMatchExplanation } from "@/lib/matching/explanations";
+import { isActiveClient } from "@/lib/intake";
+import {
+  buildAdjacentOpportunity,
+  buildMatchExplanation,
+} from "@/lib/matching/explanations";
+import { resolveQueueCategory } from "@/lib/queue-categories";
 
 /**
  * POST /api/extension/queue-job
@@ -22,7 +27,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
     const { job_post_id } = body;
     const job_seeker_id = body.job_seeker_id || session.active_job_seeker_id;
 
@@ -52,6 +62,13 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Not authorized for this job seeker." },
         { status: 403 }
+      );
+    }
+
+    if (!(await isActiveClient(job_seeker_id))) {
+      return NextResponse.json(
+        { error: "Live applications are only allowed for active clients." },
+        { status: 409 }
       );
     }
 
@@ -104,6 +121,12 @@ export async function POST(request: Request) {
       .eq("job_post_id", job_post_id)
       .maybeSingle();
 
+    const { data: seeker } = await supabaseAdmin
+      .from("job_seekers")
+      .select("match_threshold")
+      .eq("id", job_seeker_id)
+      .maybeSingle();
+
     const explanation = buildMatchExplanation(matchScore?.reasons, {
       score: matchScore?.score ?? null,
       confidence: matchScore?.confidence ?? null,
@@ -121,6 +144,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const adjacent = buildAdjacentOpportunity(matchScore?.reasons, {
+      score: matchScore?.score ?? null,
+      confidence: matchScore?.confidence ?? null,
+      recommendation: matchScore?.recommendation ?? null,
+      threshold: seeker?.match_threshold ?? 60,
+    });
+    const queueCategory = resolveQueueCategory({
+      defaultCategory: "matched",
+      adjacentEligible: adjacent.eligible,
+    });
+
     // Insert into application_queue
     const nowIso = new Date().toISOString();
     const { data: queuedItem, error: insertError } = await supabaseAdmin
@@ -129,7 +163,7 @@ export async function POST(request: Request) {
         job_post_id,
         job_seeker_id,
         status: "QUEUED",
-        category: "matched",
+        category: queueCategory,
         updated_at: nowIso,
       })
       .select("id, job_seeker_id, job_post_id")

@@ -6,6 +6,8 @@ const STORAGE_KEYS = {
   activeSeekerId: "activeSeekerId",
   runnerEnabled: "runnerEnabled",
   dryRun: "dryRun",
+  autoAutofill: "autoAutofill",
+  orchestrateAllSeekers: "orchestrateAllSeekers",
 };
 
 const DEFAULT_API_BASE_URL = "https://job-genius.com";
@@ -35,12 +37,30 @@ const els = {
   seekerSelect: document.getElementById("seekerSelect"),
   tabs: document.querySelectorAll(".tab"),
   panels: document.querySelectorAll(".panel"),
+  cockpitTotals: document.getElementById("cockpitTotals"),
+  cockpitList: document.getElementById("cockpitList"),
+  cockpitEmpty: document.getElementById("cockpitEmpty"),
+  refreshCockpitBtn: document.getElementById("refreshCockpit"),
+  adminTab: document.getElementById("adminTab"),
+  killSwitches: document.getElementById("killSwitches"),
+  adapterHealth: document.getElementById("adapterHealth"),
+  qaPending: document.getElementById("qaPending"),
+  adminStatus: document.getElementById("adminStatus"),
+  refreshAdminBtn: document.getElementById("refreshAdmin"),
   pageTitle: document.getElementById("pageTitle"),
   pageUrl: document.getElementById("pageUrl"),
   detectedBoard: document.getElementById("detectedBoard"),
   saveJobBtn: document.getElementById("saveJob"),
+  autofillPageBtn: document.getElementById("autofillPage"),
+  tailorAutofillPageBtn: document.getElementById("tailorAutofillPage"),
   scrapeVisibleBtn: document.getElementById("scrapeVisible"),
   scrapeAllBtn: document.getElementById("scrapeAll"),
+  scrapePreview: document.getElementById("scrapePreview"),
+  scrapePreviewTitle: document.getElementById("scrapePreviewTitle"),
+  scrapeList: document.getElementById("scrapeList"),
+  scrapeSaveSelectedBtn: document.getElementById("scrapeSaveSelected"),
+  scrapeToggleAllBtn: document.getElementById("scrapeToggleAll"),
+  scrapeClearBtn: document.getElementById("scrapeClear"),
   saveStatus: document.getElementById("saveStatus"),
   refreshMatchedBtn: document.getElementById("refreshMatched"),
   matchedJobsList: document.getElementById("matchedJobsList"),
@@ -50,6 +70,7 @@ const els = {
   showAppliedJobsBtn: document.getElementById("showAppliedJobs"),
   myJobsList: document.getElementById("myJobsList"),
   myJobsEmpty: document.getElementById("myJobsEmpty"),
+  applySummary: document.getElementById("applySummary"),
   referrerPanel: document.getElementById("referrerPanel"),
   referrerTitle: document.getElementById("referrerTitle"),
   referrerStatus: document.getElementById("referrerStatus"),
@@ -59,11 +80,13 @@ const els = {
   contactsEmpty: document.getElementById("contactsEmpty"),
   contactsStatus: document.getElementById("contactsStatus"),
   dryRun: document.getElementById("dryRun"),
+  autoAutofill: document.getElementById("autoAutofill"),
   toggleRunnerBtn: document.getElementById("toggleRunner"),
   saveSessionStateBtn: document.getElementById("saveSessionState"),
   runnerIndicator: document.getElementById("runnerIndicator"),
   runnerStatusText: document.getElementById("runnerStatusText"),
   settingsStatus: document.getElementById("settingsStatus"),
+  orchestrateAll: document.getElementById("orchestrateAll"),
 };
 
 // Job board detection
@@ -112,11 +135,16 @@ function getApiBaseUrl() {
   return normalizeUrl(apiBaseUrl || DEFAULT_API_BASE_URL);
 }
 
+function extVersion() {
+  return chrome.runtime?.getManifest?.().version ?? "";
+}
+
 function getHeaders() {
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${authToken}`,
     "x-runner": "extension",
+    "x-ext-version": extVersion(),
   };
 }
 
@@ -124,7 +152,23 @@ function getManualHeaders() {
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${authToken}`,
+    "x-ext-version": extVersion(),
   };
+}
+
+// Semver-ish compare: returns true when `current` is older than `minimum`.
+function isVersionOutdated(current, minimum) {
+  if (!minimum) return false;
+  const toParts = (v) => String(v || "0").split(".").map((n) => parseInt(n, 10) || 0);
+  const c = toParts(current);
+  const m = toParts(minimum);
+  for (let i = 0; i < Math.max(c.length, m.length); i += 1) {
+    const a = c[i] ?? 0;
+    const b = m[i] ?? 0;
+    if (a < b) return true;
+    if (a > b) return false;
+  }
+  return false;
 }
 
 function mapSameSite(value) {
@@ -223,8 +267,15 @@ async function verifySession() {
     const data = await response.json();
     amInfo = data.account_manager;
     await chrome.storage.local.set({ [STORAGE_KEYS.amInfo]: amInfo });
+    maybeShowUpdateBanner(data.min_extension_version);
     return true;
   } catch { return false; }
+}
+
+function maybeShowUpdateBanner(minVersion) {
+  const banner = document.getElementById("updateBanner");
+  if (!banner) return;
+  banner.classList.toggle("hidden", !isVersionOutdated(extVersion(), minVersion));
 }
 
 // ─── UI State Management ──────────────────────────────────────
@@ -281,6 +332,11 @@ async function loadSeekers() {
       activeSeekerId = data.active_job_seeker_id;
     }
   } catch (e) { console.error("Failed to load seekers:", e); }
+
+  // Cockpit is the default tab — populate it once we're connected.
+  loadCockpit();
+  // Reveal + populate the Admin tab if this AM is an admin (probe decides).
+  loadAdminOverview();
 }
 
 async function setActiveSeeker(seekerId) {
@@ -297,6 +353,332 @@ async function setActiveSeeker(seekerId) {
       body: JSON.stringify({ job_seeker_id: seekerId }),
     });
   } catch (e) { console.error("Failed to set active seeker:", e); }
+}
+
+// ─── Cockpit: AM triage board across all assigned seekers ─────
+
+function renderCockpitEmpty(message) {
+  if (els.cockpitTotals) els.cockpitTotals.classList.add("hidden");
+  if (els.cockpitList) {
+    els.cockpitList.innerHTML =
+      `<div class="empty-state"><div>${sanitizeText(message)}</div></div>`;
+  }
+}
+
+function cockpitTotalTile(kind, num, label) {
+  const tile = document.createElement("div");
+  tile.className = `cockpit-total ${kind}`;
+  const n = document.createElement("div");
+  n.className = "num";
+  n.textContent = String(num ?? 0);
+  const l = document.createElement("div");
+  l.className = "lbl";
+  l.textContent = label;
+  tile.appendChild(n);
+  tile.appendChild(l);
+  return tile;
+}
+
+function cockpitRow(seeker) {
+  const needsAttn = seeker.needs_attention || 0;
+  const queued = seeker.pending_queue || 0;
+  const matches = seeker.new_matches || 0;
+
+  const priorityClass =
+    needsAttn > 0 ? "p-attn" : queued > 0 ? "p-queue" : matches > 0 ? "p-matches" : "p-idle";
+
+  const row = document.createElement("div");
+  row.className = `cockpit-row ${priorityClass}`;
+
+  const main = document.createElement("div");
+  main.className = "cockpit-row-main";
+
+  const name = document.createElement("div");
+  name.className = "cockpit-name";
+  name.textContent = seeker.name || "Seeker";
+  name.title = seeker.name || "";
+  main.appendChild(name);
+
+  const chips = document.createElement("div");
+  chips.className = "cockpit-chips";
+  const addChip = (cls, text) => {
+    const c = document.createElement("span");
+    c.className = `ck-chip ${cls}`;
+    c.textContent = text;
+    chips.appendChild(c);
+  };
+  if (needsAttn > 0) addChip("attn", `⚠ ${needsAttn} attention`);
+  if (queued > 0) addChip("queue", `⏳ ${queued} queued`);
+  if (matches > 0) addChip("matches", `✨ ${matches} new`);
+  if (needsAttn === 0 && queued === 0 && matches === 0) addChip("idle", "All clear");
+  main.appendChild(chips);
+
+  const actions = document.createElement("div");
+  actions.style.cssText = "display:flex;flex-direction:column;gap:4px;flex:none";
+
+  // One-click: queue this seeker's new matches for the runner without drilling in.
+  if (matches > 0) {
+    const queueBtn = document.createElement("button");
+    queueBtn.className = "btn btn-secondary btn-sm cockpit-work";
+    queueBtn.textContent = `Queue ${matches}`;
+    queueBtn.title = "Queue this seeker's new matches for the auto-apply runner";
+    queueBtn.addEventListener("click", () => onQueueSeekerMatches(seeker, queueBtn));
+    actions.appendChild(queueBtn);
+  }
+
+  const work = document.createElement("button");
+  work.className = "btn btn-primary btn-sm cockpit-work";
+  work.textContent = needsAttn > 0 || queued > 0 || matches > 0 ? "Work" : "Open";
+  work.addEventListener("click", () => onWorkSeeker(seeker));
+  actions.appendChild(work);
+
+  row.appendChild(main);
+  row.appendChild(actions);
+  return row;
+}
+
+function renderCockpit(data) {
+  const seekers = Array.isArray(data?.seekers) ? data.seekers : [];
+  const totals = data?.totals || { needs_attention: 0, pending_queue: 0, new_matches: 0 };
+
+  if (els.cockpitTotals) {
+    els.cockpitTotals.innerHTML = "";
+    els.cockpitTotals.classList.remove("hidden");
+    els.cockpitTotals.appendChild(cockpitTotalTile("attn", totals.needs_attention, "Attention"));
+    els.cockpitTotals.appendChild(cockpitTotalTile("queue", totals.pending_queue, "Queued"));
+    els.cockpitTotals.appendChild(cockpitTotalTile("matches", totals.new_matches, "New"));
+  }
+
+  if (seekers.length === 0) {
+    renderCockpitEmpty("No seekers assigned to you yet.");
+    return;
+  }
+
+  els.cockpitList.innerHTML = "";
+  for (const seeker of seekers) {
+    els.cockpitList.appendChild(cockpitRow(seeker));
+  }
+}
+
+async function loadCockpit() {
+  const apiBaseUrl = getApiBaseUrl();
+  if (!apiBaseUrl || !authToken) return;
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/extension/cockpit`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (!response.ok) {
+      renderCockpitEmpty("Couldn't load your work board.");
+      return;
+    }
+    renderCockpit(await response.json());
+  } catch (e) {
+    console.error("Failed to load cockpit:", e);
+    renderCockpitEmpty("Couldn't load your work board.");
+  }
+}
+
+// Queue every not-yet-actioned match for the CURRENT active seeker. Returns the
+// number queued. Mirrors window.queueAllJobs but returns a count and doesn't
+// touch the Matches/Apply panels (the cockpit refreshes itself instead).
+async function queueActiveSeekerMatches() {
+  const apiBaseUrl = getApiBaseUrl();
+  if (!apiBaseUrl || !authToken) return 0;
+  const response = await fetch(`${apiBaseUrl}/api/extension/matched-jobs`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  if (!response.ok) return 0;
+  const data = await response.json();
+  const jobs = (data.jobs || []).filter((j) => !j.queue_status && !j.queue_blocked);
+  let queued = 0;
+  for (const job of jobs) {
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/extension/queue-job`, {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({ job_post_id: job.id }),
+      });
+      if (res.ok) queued++;
+    } catch (e) {
+      console.error("Cockpit queue error:", e);
+    }
+  }
+  return queued;
+}
+
+// Cockpit quick action: make the seeker active and queue their new matches, then
+// refresh the board so the counts move from "new" to "queued".
+async function onQueueSeekerMatches(seeker, btn) {
+  btn.disabled = true;
+  btn.textContent = "Queuing…";
+  try {
+    await setActiveSeeker(seeker.id);
+    if (els.seekerSelect) els.seekerSelect.value = seeker.id;
+    const queued = await queueActiveSeekerMatches();
+    btn.textContent = queued > 0 ? `Queued ${queued}` : "Nothing new";
+    // Rebuilds the rows with fresh counts (this button instance is discarded).
+    await loadCockpit();
+  } catch (e) {
+    console.error("Cockpit queue action failed:", e);
+    btn.textContent = "Retry";
+    btn.disabled = false;
+  }
+}
+
+// Make a seeker active and jump to the tab that holds their most urgent work.
+async function onWorkSeeker(seeker) {
+  await setActiveSeeker(seeker.id);
+  if (els.seekerSelect) els.seekerSelect.value = seeker.id;
+  const dest =
+    seeker.needs_attention > 0 || seeker.pending_queue > 0
+      ? "apply"
+      : seeker.new_matches > 0
+      ? "matched"
+      : "capture";
+  activateTab(dest);
+}
+
+// Switch tabs programmatically (mirrors the tab click handler) and trigger the
+// destination panel's loader.
+function activateTab(targetId) {
+  els.tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === targetId));
+  els.panels.forEach((p) => p.classList.remove("active"));
+  const panel = document.getElementById(`panel-${targetId}`);
+  if (panel) panel.classList.add("active");
+  if (targetId === "cockpit") loadCockpit();
+  if (targetId === "matched") loadMatchedJobs();
+  if (targetId === "apply") loadMyJobs();
+  if (targetId === "contacts") loadContacts();
+  if (targetId === "admin") loadAdminOverview();
+}
+
+// ─── Admin oversight (only for admin-role AMs) ────────────────
+
+function killSwitchLabel(key) {
+  if (key === "GLOBAL_APPLY") return "All applications (global)";
+  if (key.startsWith("ATS:")) return key.slice(4);
+  return key;
+}
+
+// Probe the admin overview. A 401/403 means this AM is not an admin, so the
+// Admin tab stays hidden; success reveals + renders it.
+async function loadAdminOverview() {
+  const apiBaseUrl = getApiBaseUrl();
+  if (!apiBaseUrl || !authToken) return;
+  try {
+    const res = await fetch(`${apiBaseUrl}/api/extension/admin/overview`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (res.status === 401 || res.status === 403) {
+      if (els.adminTab) els.adminTab.classList.add("hidden");
+      return;
+    }
+    if (!res.ok) return;
+    const data = await res.json();
+    if (els.adminTab) els.adminTab.classList.remove("hidden");
+    renderAdminOverview(data);
+  } catch (e) {
+    console.error("Admin overview failed:", e);
+  }
+}
+
+function renderAdminOverview(data) {
+  // Kill switches
+  const policies = Array.isArray(data.policies) ? data.policies : [];
+  els.killSwitches.innerHTML = "";
+  for (const p of policies) {
+    const row = document.createElement("div");
+    row.className = "ks-row";
+    const lb = document.createElement("span");
+    lb.className = "ks-label";
+    lb.textContent = killSwitchLabel(p.key);
+    const btn = document.createElement("button");
+    btn.className = "ks-toggle " + (p.enabled ? "ks-on" : "ks-off");
+    btn.textContent = p.enabled ? "On" : "Halted";
+    btn.addEventListener("click", () => toggleKillSwitch(p.key, !p.enabled, btn));
+    row.appendChild(lb);
+    row.appendChild(btn);
+    els.killSwitches.appendChild(row);
+  }
+
+  // Adapter health
+  const health = Array.isArray(data.adapter_health) ? data.adapter_health : [];
+  els.adapterHealth.innerHTML = "";
+  if (health.length === 0) {
+    els.adapterHealth.innerHTML =
+      '<div class="empty-state" style="padding:8px">No adapter events in the last 7 days.</div>';
+  }
+  for (const h of health) {
+    const row = document.createElement("div");
+    row.className = "health-row";
+    const name = document.createElement("span");
+    name.className = "health-name";
+    name.textContent = h.ats_type;
+    const rate = document.createElement("span");
+    const cls =
+      h.status === "healthy" ? "h-healthy" : h.status === "degraded" ? "h-degraded" : "h-down";
+    rate.className = "health-rate " + cls;
+    rate.textContent = `${h.success_rate}% · ${h.status} (${h.total_runs})`;
+    row.appendChild(name);
+    row.appendChild(rate);
+    els.adapterHealth.appendChild(row);
+  }
+
+  // QA queue
+  const qa = Number(data.qa_pending || 0);
+  els.qaPending.textContent =
+    qa > 0
+      ? `${qa} review${qa === 1 ? "" : "s"} pending — review in the dashboard QA queue.`
+      : "No pending QA reviews.";
+}
+
+// Toggle a switch. Halting (disabling) requires a confirming second click so a
+// misclick can't stop all applications — and avoids a native confirm() dialog,
+// which can close the popup.
+async function toggleKillSwitch(key, enabled, btn) {
+  const apiBaseUrl = getApiBaseUrl();
+  if (!apiBaseUrl || !authToken) return;
+
+  if (!enabled && !btn.dataset.confirm) {
+    btn.dataset.confirm = "1";
+    btn.className = "ks-toggle ks-confirm";
+    btn.textContent = "Confirm halt";
+    setTimeout(() => {
+      if (btn.dataset.confirm) {
+        delete btn.dataset.confirm;
+        btn.className = "ks-toggle ks-on";
+        btn.textContent = "On";
+      }
+    }, 3000);
+    return;
+  }
+  delete btn.dataset.confirm;
+
+  btn.disabled = true;
+  btn.textContent = "…";
+  try {
+    const res = await fetch(`${apiBaseUrl}/api/extension/admin/kill-switch`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ key, enabled }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setStatus(els.adminStatus, body.error || "Failed to update switch.", "error");
+      btn.disabled = false;
+      return;
+    }
+    setStatus(
+      els.adminStatus,
+      enabled ? `Re-enabled ${killSwitchLabel(key)}.` : `Halted ${killSwitchLabel(key)}.`,
+      enabled ? "success" : "info"
+    );
+    await loadAdminOverview();
+  } catch (e) {
+    console.error("Kill-switch toggle failed:", e);
+    setStatus(els.adminStatus, "Failed to update switch.", "error");
+    btn.disabled = false;
+  }
 }
 
 // ─── Matched Jobs ─────────────────────────────────────────────
@@ -325,6 +707,104 @@ async function triggerRunnerNow() {
   updateRunnerUI(true);
 }
 
+function renderMatchedJobCard(job, options = {}) {
+  const numericScore = Number(job.score);
+  const hasScore = Number.isFinite(numericScore) && numericScore >= 0;
+  const scoreClass = hasScore
+    ? (numericScore >= 80 ? "high" : numericScore >= 60 ? "medium" : "low")
+    : "low";
+  const cardClass = job.needs_attention
+    ? "score-medium"
+    : (hasScore ? (numericScore >= 80 ? "score-high" : numericScore >= 60 ? "score-medium" : "score-low") : "score-low");
+  const recLabel = job.recommendation === "strong_match"
+    ? "Strong"
+    : job.recommendation === "good_match"
+      ? "Good"
+      : job.recommendation
+        ? "Fair"
+        : "Unrated";
+  const recColor = job.recommendation === "strong_match"
+    ? "#166534"
+    : job.recommendation === "good_match"
+      ? "#1e40af"
+      : "#92400e";
+  const scoreLabel = hasScore ? `${Math.round(numericScore)}%` : "--";
+  const summaryItems = Array.isArray(job.score_summary) ? job.score_summary.slice(0, 2) : [];
+  const blockerItems = Array.isArray(job.score_blockers) ? job.score_blockers.slice(0, 2) : [];
+  const laneBadge = options.adjacent
+    ? '<span style="font-size:8px;padding:1px 4px;background:#fef3c7;border-radius:3px;color:#92400e">Adjacent</span>'
+    : "";
+
+  let actionHtml;
+  if (job.queue_status === "NEEDS_ATTENTION") {
+    if (job.run_id) {
+      actionHtml = `<div style="display:flex;gap:4px;align-items:center"><span class="queue-badge" style="background:#fff7ed;color:#9a3412">Needs Attention</span><button class="btn btn-secondary btn-sm" onclick="resumeJob('${job.run_id}', '${encodeURIComponent(job.url || "")}')" style="width:auto;padding:3px 8px;font-size:9px">Resume</button></div>`;
+    } else {
+      actionHtml = '<span class="queue-badge" style="background:#fff7ed;color:#9a3412">Needs Attention</span>';
+    }
+  } else if (job.queue_status === "APPLIED" || job.queue_status === "COMPLETED") {
+    actionHtml = '<span class="queue-badge" style="background:#dcfce7;color:#166534">Applied</span>';
+  } else if (job.queue_status === "RUNNING") {
+    actionHtml = '<span class="queue-badge" style="background:#dbeafe;color:#1e40af">Running</span>';
+  } else if (job.queue_status === "QUEUED" || job.queue_status === "READY" || job.queue_status === "RETRYING") {
+    const eTitle = encodeURIComponent(job.title || "");
+    const eCo = encodeURIComponent(job.company || "");
+    const eLoc = encodeURIComponent(job.location || "");
+    actionHtml = `<div style="display:flex;gap:4px;align-items:center"><span class="queue-badge">${job.queue_status}</span><button class="btn btn-apply btn-sm" onclick="applyJob('${job.id}','${eTitle}','${eCo}','${eLoc}')" style="width:auto;padding:3px 8px;font-size:9px">Apply</button></div>`;
+  } else if (job.queue_status) {
+    actionHtml = `<span class="queue-badge">${job.queue_status}</span>`;
+  } else if (job.queue_blocked) {
+    actionHtml = `<span class="queue-badge" style="background:#fee2e2;color:#991b1b" title="${sanitizeText(job.queue_block_reason || "Blocked from queueing")}">Blocked</span>`;
+  } else {
+    const eTitle = encodeURIComponent(job.title || "");
+    const eCo = encodeURIComponent(job.company || "");
+    const eLoc = encodeURIComponent(job.location || "");
+    actionHtml = `<div style="display:flex;gap:4px"><button class="btn btn-secondary btn-sm" onclick="queueJob('${job.id}')" style="width:auto;padding:3px 8px;font-size:9px">Queue</button><button class="btn btn-apply btn-sm" onclick="applyJob('${job.id}','${eTitle}','${eCo}','${eLoc}')" style="width:auto;padding:3px 8px;font-size:9px">Apply</button></div>`;
+  }
+
+  const attentionReason = job.needs_attention_reason
+    ? `<div style="font-size:9px;color:#9a3412;margin-top:4px">Reason: ${sanitizeText(formatAttentionReason(job.needs_attention_reason))}</div>`
+    : "";
+  const attentionError = job.last_error
+    ? `<div style="font-size:9px;color:#92400e;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${sanitizeText(job.last_error)}">${sanitizeText(job.last_error)}</div>`
+    : "";
+  const summaryHtml = summaryItems.length > 0
+    ? `<div style="margin-top:4px;display:flex;flex-direction:column;gap:2px">${summaryItems.map((item) => `<div style="font-size:9px;color:#4b5563">${sanitizeText(item)}</div>`).join("")}</div>`
+    : "";
+  const blockerHtml = blockerItems.length > 0
+    ? `<div style="margin-top:4px;display:flex;flex-direction:column;gap:2px">${blockerItems.map((item) => `<div style="font-size:9px;color:#b45309">${sanitizeText(item)}</div>`).join("")}</div>`
+    : "";
+  const queueBlockHtml = job.queue_blocked && !job.queue_status && job.queue_block_reason
+    ? `<div style="font-size:9px;color:#991b1b;margin-top:4px">${sanitizeText(job.queue_block_reason)}</div>`
+    : "";
+  const adjacentReasonHtml = options.adjacent && job.adjacent_reason
+    ? `<div style="font-size:9px;color:#92400e;margin-top:4px">${sanitizeText(job.adjacent_reason)}</div>`
+    : "";
+
+  return `
+    <div class="job-card ${cardClass}">
+      <div class="title" title="${sanitizeText(job.title)}">
+        <a href="${sanitizeText(job.url)}" target="_blank" style="color:inherit;text-decoration:none">${sanitizeText(job.title)}</a>
+      </div>
+      <div class="meta">${sanitizeText(job.company || "Unknown")} ${job.location ? " - " + sanitizeText(job.location) : ""}</div>
+      <div style="display:flex;gap:4px;margin-top:2px;flex-wrap:wrap">
+        ${job.work_type ? `<span style="font-size:8px;padding:1px 4px;background:#f3f4f6;border-radius:3px;color:#6b7280;text-transform:capitalize">${sanitizeText(job.work_type)}</span>` : ""}
+        <span style="font-size:8px;padding:1px 4px;background:#ede9fe;border-radius:3px;color:${recColor}">${recLabel}</span>
+        ${job.confidence === "high" ? '<span style="font-size:8px;padding:1px 4px;background:#dbeafe;border-radius:3px;color:#1e40af">High Conf.</span>' : ""}
+        ${laneBadge}
+      </div>
+      ${adjacentReasonHtml}
+      ${summaryHtml}
+      ${blockerHtml}
+      ${queueBlockHtml}
+      ${job.queue_status === "NEEDS_ATTENTION" ? attentionReason + attentionError : ""}
+      <div class="bottom">
+        <span class="score-badge ${scoreClass}">${scoreLabel}</span>
+        ${actionHtml}
+      </div>
+    </div>`;
+}
+
 async function loadMatchedJobs() {
   const apiBaseUrl = getApiBaseUrl();
   if (!apiBaseUrl || !authToken || !activeSeekerId) {
@@ -346,10 +826,11 @@ async function loadMatchedJobs() {
 
     const data = await response.json();
     const jobs = data.jobs || [];
+    const adjacentJobs = data.adjacent_jobs || [];
     const threshold = data.threshold || 50;
     const attentionJobs = jobs.filter((j) => j.needs_attention || j.queue_status === "NEEDS_ATTENTION");
 
-    if (jobs.length === 0) {
+    if (jobs.length === 0 && adjacentJobs.length === 0) {
       els.matchedJobsList.innerHTML = `
         <div class="empty-state">
           <div>No matched jobs above ${threshold}% threshold.</div>
@@ -368,7 +849,7 @@ async function loadMatchedJobs() {
 
     const headerHtml = `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:#f0fdf4;border-radius:6px;margin-bottom:6px">
-        <span style="font-size:10px;color:#166534">${jobs.length} jobs tracked (${attentionJobs.length} need attention)</span>
+        <span style="font-size:10px;color:#166534">${jobs.length} matched jobs tracked (${attentionJobs.length} need attention${adjacentJobs.length ? `, ${adjacentJobs.length} adjacent to review` : ""})</span>
         <div style="display:flex;gap:4px">
           ${queueableJobs.length > 0 ? `<button class="btn btn-secondary btn-sm" onclick="queueAllJobs()" style="width:auto;padding:2px 8px;font-size:9px">Queue All (${queueableJobs.length})</button>` : ""}
           ${applyableJobs.length > 0 ? `<button class="btn btn-apply btn-sm" onclick="applyAllJobs()" style="width:auto;padding:2px 8px;font-size:9px">Apply All (${applyableJobs.length})</button>` : ""}
@@ -376,93 +857,24 @@ async function loadMatchedJobs() {
         </div>
       </div>`;
 
-    const jobsHtml = jobs.map((job) => {
-      const numericScore = Number(job.score);
-      const hasScore = Number.isFinite(numericScore) && numericScore >= 0;
-      const scoreClass = hasScore
-        ? (numericScore >= 80 ? "high" : numericScore >= 60 ? "medium" : "low")
-        : "low";
-      const cardClass = job.needs_attention
-        ? "score-medium"
-        : (hasScore ? (numericScore >= 80 ? "score-high" : numericScore >= 60 ? "score-medium" : "score-low") : "score-low");
-      const recLabel = job.recommendation === "strong_match"
-        ? "Strong"
-        : job.recommendation === "good_match"
-          ? "Good"
-          : job.recommendation
-            ? "Fair"
-            : "Unrated";
-      const recColor = job.recommendation === "strong_match"
-        ? "#166534"
-        : job.recommendation === "good_match"
-          ? "#1e40af"
-          : "#92400e";
-      const scoreLabel = hasScore ? `${Math.round(numericScore)}%` : "--";
-      const summaryItems = Array.isArray(job.score_summary) ? job.score_summary.slice(0, 2) : [];
-      const blockerItems = Array.isArray(job.score_blockers) ? job.score_blockers.slice(0, 2) : [];
-
-      let actionHtml;
-      if (job.queue_status === "NEEDS_ATTENTION") {
-        if (job.run_id) {
-          actionHtml = `<div style="display:flex;gap:4px;align-items:center"><span class="queue-badge" style="background:#fff7ed;color:#9a3412">Needs Attention</span><button class="btn btn-secondary btn-sm" onclick="resumeJob('${job.run_id}', '${encodeURIComponent(job.url || "")}')" style="width:auto;padding:3px 8px;font-size:9px">Resume</button></div>`;
-        } else {
-          actionHtml = '<span class="queue-badge" style="background:#fff7ed;color:#9a3412">Needs Attention</span>';
-        }
-      } else if (job.queue_status === "APPLIED" || job.queue_status === "COMPLETED") {
-        actionHtml = '<span class="queue-badge" style="background:#dcfce7;color:#166534">Applied</span>';
-      } else if (job.queue_status === "RUNNING") {
-        actionHtml = '<span class="queue-badge" style="background:#dbeafe;color:#1e40af">Running</span>';
-      } else if (job.queue_status === "QUEUED" || job.queue_status === "READY" || job.queue_status === "RETRYING") {
-        const eTitle = encodeURIComponent(job.title || ""); const eCo = encodeURIComponent(job.company || ""); const eLoc = encodeURIComponent(job.location || "");
-        actionHtml = `<div style="display:flex;gap:4px;align-items:center"><span class="queue-badge">${job.queue_status}</span><button class="btn btn-apply btn-sm" onclick="applyJob('${job.id}','${eTitle}','${eCo}','${eLoc}')" style="width:auto;padding:3px 8px;font-size:9px">Apply</button></div>`;
-      } else if (job.queue_status) {
-        actionHtml = `<span class="queue-badge">${job.queue_status}</span>`;
-      } else if (job.queue_blocked) {
-        actionHtml = `<span class="queue-badge" style="background:#fee2e2;color:#991b1b" title="${sanitizeText(job.queue_block_reason || "Blocked from queueing")}">Blocked</span>`;
-      } else {
-        const eTitle = encodeURIComponent(job.title || ""); const eCo = encodeURIComponent(job.company || ""); const eLoc = encodeURIComponent(job.location || "");
-        actionHtml = `<div style="display:flex;gap:4px"><button class="btn btn-secondary btn-sm" onclick="queueJob('${job.id}')" style="width:auto;padding:3px 8px;font-size:9px">Queue</button><button class="btn btn-apply btn-sm" onclick="applyJob('${job.id}','${eTitle}','${eCo}','${eLoc}')" style="width:auto;padding:3px 8px;font-size:9px">Apply</button></div>`;
-      }
-
-      const attentionReason = job.needs_attention_reason
-        ? `<div style="font-size:9px;color:#9a3412;margin-top:4px">Reason: ${sanitizeText(formatAttentionReason(job.needs_attention_reason))}</div>`
-        : "";
-      const attentionError = job.last_error
-        ? `<div style="font-size:9px;color:#92400e;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${sanitizeText(job.last_error)}">${sanitizeText(job.last_error)}</div>`
-        : "";
-      const summaryHtml = summaryItems.length > 0
-        ? `<div style="margin-top:4px;display:flex;flex-direction:column;gap:2px">${summaryItems.map((item) => `<div style="font-size:9px;color:#4b5563">${sanitizeText(item)}</div>`).join("")}</div>`
-        : "";
-      const blockerHtml = blockerItems.length > 0
-        ? `<div style="margin-top:4px;display:flex;flex-direction:column;gap:2px">${blockerItems.map((item) => `<div style="font-size:9px;color:#b45309">${sanitizeText(item)}</div>`).join("")}</div>`
-        : "";
-      const queueBlockHtml = job.queue_blocked && !job.queue_status && job.queue_block_reason
-        ? `<div style="font-size:9px;color:#991b1b;margin-top:4px">${sanitizeText(job.queue_block_reason)}</div>`
-        : "";
-
-      return `
-        <div class="job-card ${cardClass}">
-          <div class="title" title="${sanitizeText(job.title)}">
-            <a href="${sanitizeText(job.url)}" target="_blank" style="color:inherit;text-decoration:none">${sanitizeText(job.title)}</a>
-          </div>
-          <div class="meta">${sanitizeText(job.company || "Unknown")} ${job.location ? " - " + sanitizeText(job.location) : ""}</div>
-          <div style="display:flex;gap:4px;margin-top:2px">
-            ${job.work_type ? `<span style="font-size:8px;padding:1px 4px;background:#f3f4f6;border-radius:3px;color:#6b7280;text-transform:capitalize">${sanitizeText(job.work_type)}</span>` : ""}
-            <span style="font-size:8px;padding:1px 4px;background:#ede9fe;border-radius:3px;color:${recColor}">${recLabel}</span>
-            ${job.confidence === "high" ? '<span style="font-size:8px;padding:1px 4px;background:#dbeafe;border-radius:3px;color:#1e40af">High Conf.</span>' : ""}
-          </div>
-          ${summaryHtml}
-          ${blockerHtml}
-          ${queueBlockHtml}
-          ${job.queue_status === "NEEDS_ATTENTION" ? attentionReason + attentionError : ""}
-          <div class="bottom">
-            <span class="score-badge ${scoreClass}">${scoreLabel}</span>
-            ${actionHtml}
-          </div>
+    const primarySectionHtml = jobs.length > 0
+      ? jobs.map((job) => renderMatchedJobCard(job)).join("")
+      : `
+        <div class="empty-state" style="margin-bottom:8px">
+          <div>No jobs cleared the ${threshold}% threshold right now.</div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:4px">Review the adjacent opportunities below instead of lowering the threshold blindly.</div>
         </div>`;
-    }).join("");
+    const adjacentSectionHtml = adjacentJobs.length > 0
+      ? `
+        <div style="margin-top:8px;padding:6px 8px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px">
+          <div style="font-size:10px;font-weight:600;color:#92400e">Adjacent opportunities</div>
+          <div style="font-size:9px;color:#a16207;margin-top:2px">These did not clear the main threshold, but they still show strong underlying fit. Review them manually before queueing.</div>
+        </div>
+        ${adjacentJobs.map((job) => renderMatchedJobCard(job, { adjacent: true })).join("")}
+      `
+      : "";
 
-    els.matchedJobsList.innerHTML = headerHtml + jobsHtml;
+    els.matchedJobsList.innerHTML = headerHtml + primarySectionHtml + adjacentSectionHtml;
   } catch (error) {
     els.matchedJobsList.innerHTML = '<div class="empty-state">Error loading jobs.</div>';
     console.error("Matched jobs error:", error);
@@ -533,9 +945,35 @@ function renderReferrerGroup(label, rows) {
   `;
 }
 
+function updateApplySummary(items) {
+  if (!els.applySummary) return;
+  if (!Array.isArray(items) || items.length === 0) {
+    els.applySummary.textContent = "";
+    return;
+  }
+  let applied = 0;
+  let needsYou = 0;
+  let inQueue = 0;
+  let running = 0;
+  for (const item of items) {
+    const s = String(item.run_status || item.queue_status || "").toUpperCase();
+    if (["APPLIED", "COMPLETED", "SUBMITTED"].includes(s)) applied += 1;
+    else if (s === "NEEDS_ATTENTION") needsYou += 1;
+    else if (s === "RUNNING") running += 1;
+    else if (["QUEUED", "READY", "RETRYING"].includes(s)) inQueue += 1;
+  }
+  const parts = [];
+  if (inQueue) parts.push(`${inQueue} in queue`);
+  if (running) parts.push(`${running} running`);
+  if (needsYou) parts.push(`${needsYou} need you`);
+  if (includeAppliedJobs && applied) parts.push(`${applied} applied`);
+  els.applySummary.textContent = parts.join("  ·  ");
+}
+
 async function loadMyJobs() {
   const apiBaseUrl = getApiBaseUrl();
   if (!apiBaseUrl || !authToken || !activeSeekerId) {
+    if (els.applySummary) els.applySummary.textContent = "";
     if (els.myJobsEmpty) {
       els.myJobsEmpty.style.display = "block";
     }
@@ -580,6 +1018,7 @@ async function loadMyJobs() {
 
     const data = await response.json();
     const items = data.items || [];
+    updateApplySummary(items);
 
     if (items.length === 0) {
       if (els.myJobsList) {
@@ -802,6 +1241,17 @@ async function startRunForQueue(queueId) {
     if (data?.blocked && data?.reason === "MAX_CONCURRENCY") {
       throw new Error("Runner is at max concurrency. Try again in a moment.");
     }
+    if (data?.blocked && data?.reason === "DUPLICATE_APPLICATION") {
+      const job = data.duplicate_job;
+      throw new Error(
+        job?.company
+          ? `Already applied to ${job.company} — ${job.title ?? "same role"} recently. Skipped to avoid a duplicate.`
+          : "Already applied to this job recently. Skipped to avoid a duplicate."
+      );
+    }
+    if (data?.blocked) {
+      throw new Error(`Blocked: ${data.reason ?? "policy limit"}.`);
+    }
     throw new Error(data?.error || "Failed to start run.");
   }
 
@@ -842,6 +1292,7 @@ async function queueAndResolveRun(jobPostId) {
   return {
     runId: started.run_id,
     status: String(started.status || "READY").toUpperCase(),
+    alreadyApplied: Boolean(started.already_applied),
   };
 }
 
@@ -859,7 +1310,7 @@ async function confirmAutofill() {
 
   try {
     const resolved = await queueAndResolveRun(jobId);
-    if (!resolved.runId) {
+    if (!resolved.runId || resolved.alreadyApplied || ["APPLIED", "COMPLETED", "SUBMITTED"].includes(resolved.status)) {
       setStatus(els.saveStatus, "This job is already marked applied.", "info");
       await Promise.all([loadMatchedJobs(), loadMyJobs()]);
       return;
@@ -1242,6 +1693,76 @@ function scrapeContactsFromPage() {
 
 // ─── Save/Scrape Job Handlers ─────────────────────────────────
 
+// Mode 3: interactive "Autofill this page" — fills the visible application
+// form on the current tab (matched or unmatched job). Fill-only; the user
+// reviews and submits themselves. When `tailor` is true, the resume is first
+// customized to the job and the tailored version is uploaded.
+async function autofillCurrentPage(tailor = false) {
+  if (!authToken || !activeSeekerId) {
+    setStatus(els.saveStatus, "Connect and select a job seeker first.", "error");
+    return;
+  }
+
+  setStatus(
+    els.saveStatus,
+    tailor ? "Tailoring résumé and launching autofill…" : "Launching autofill…",
+    "info"
+  );
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      setStatus(els.saveStatus, "Unable to access current tab.", "error");
+      return;
+    }
+
+    const resp = await sendRuntimeMessage({
+      type: "AUTOFILL_ACTIVE_TAB",
+      tabId: tab.id,
+      tailor,
+    });
+
+    if (!resp?.success) {
+      setStatus(els.saveStatus, "Error: " + (resp?.error || "Failed to autofill."), "error");
+      return;
+    }
+
+    if (tailor && !resp.tailored) {
+      // Autofill still ran with the base resume; surface why tailoring didn't apply.
+      const why = resp.tailoring?.error || "Could not tailor résumé.";
+      setStatus(
+        els.saveStatus,
+        `Autofilling with base résumé (${why}). Review the form, then submit.`,
+        "info"
+      );
+      return;
+    }
+
+    if (tailor && resp.tailored) {
+      const cov = resp.tailoring?.coverage;
+      const covText =
+        cov && typeof cov.before?.coveragePct === "number" && typeof cov.after?.coveragePct === "number"
+          ? ` Skill coverage ${cov.before.coveragePct}% → ${cov.after.coveragePct}%.`
+          : "";
+      setStatus(
+        els.saveStatus,
+        `Résumé tailored to this job.${covText} Autofilling — review the form, then submit.`,
+        "success"
+      );
+      return;
+    }
+
+    setStatus(
+      els.saveStatus,
+      "Autofill started — see the checklist panel on the page.",
+      "success"
+    );
+  } catch (error) {
+    setStatus(els.saveStatus, "Error: " + error.message, "error");
+    console.error("Autofill page error:", error);
+  }
+}
+
 async function saveCurrentJob() {
   const apiBaseUrl = getApiBaseUrl();
   if (!apiBaseUrl || !isValidUrl(apiBaseUrl)) {
@@ -1354,7 +1875,19 @@ async function saveCurrentJob() {
   }
 }
 
-async function scrapeAndSaveJobs(scrapeFunc) {
+// Scraped jobs are held here for review; nothing is saved until the AM confirms.
+let scrapedJobs = [];
+let scrapedSelected = [];
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function scrapeJobs(scrapeFunc) {
   const apiBaseUrl = getApiBaseUrl();
   if (!apiBaseUrl || !isValidUrl(apiBaseUrl)) {
     setStatus(els.saveStatus, "Set API Base URL in Settings.", "error");
@@ -1377,41 +1910,151 @@ async function scrapeAndSaveJobs(scrapeFunc) {
 
     const jobs = results[0]?.result || [];
     if (jobs.length === 0) {
+      clearScrapePreview();
       setStatus(els.saveStatus, "No job listings found.", "info");
       return;
     }
 
-    let saved = 0;
-    let duplicates = 0;
-
-    for (const job of jobs) {
-      try {
-        const response = await fetch(`${apiBaseUrl}/api/jobs/save`, {
-          method: "POST",
-          headers: getHeaders(),
-          body: JSON.stringify({
-            url: job.url,
-            title: job.title,
-            company: job.company,
-            location: job.location,
-            source: job.source || "extension_scrape",
-            raw_text: job.description || null,
-          }),
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.duplicate) duplicates++;
-          else saved++;
-        }
-      } catch (e) { console.error("Error saving job:", e); }
-    }
-
-    setStatus(els.saveStatus, `Scraped ${jobs.length}: ${saved} saved, ${duplicates} duplicates. Jobs auto-matched!`, "success");
-    // Refresh matched jobs after scraping since auto-match runs server-side
-    setTimeout(() => loadMatchedJobs(), 2000);
+    // Show the jobs for review instead of saving them.
+    scrapedJobs = jobs;
+    scrapedSelected = jobs.map(() => true);
+    renderScrapePreview();
+    setStatus(els.saveStatus, `Found ${jobs.length} jobs. Review, then save.`, "info");
   } catch (error) {
     setStatus(els.saveStatus, "Error: " + error.message, "error");
   }
+}
+
+function selectedScrapeCount() {
+  return scrapedSelected.filter(Boolean).length;
+}
+
+function renderScrapePreview() {
+  if (!els.scrapePreview || !els.scrapeList) return;
+  if (scrapedJobs.length === 0) {
+    els.scrapePreview.classList.add("hidden");
+    return;
+  }
+  els.scrapePreview.classList.remove("hidden");
+  els.scrapePreviewTitle.textContent = `${selectedScrapeCount()} of ${scrapedJobs.length} selected`;
+
+  els.scrapeList.innerHTML = scrapedJobs
+    .map((job, i) => {
+      const meta = [job.company, job.location].filter(Boolean).join(" · ") || job.url || "";
+      const openBtn = job.url
+        ? `<button data-open="${i}" title="Open in new tab" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:13px;padding:2px 4px;line-height:1">↗</button>`
+        : "";
+      return `
+        <div class="job-card" style="display:flex;gap:6px;align-items:flex-start">
+          <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;flex:1;min-width:0">
+            <input type="checkbox" data-idx="${i}" ${scrapedSelected[i] ? "checked" : ""} style="margin-top:3px;width:14px;height:14px" />
+            <span style="min-width:0;flex:1">
+              <span class="title" style="display:block">${escapeHtml(job.title || "Untitled")}</span>
+              <span class="meta" style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(meta)}</span>
+            </span>
+          </label>
+          <div style="display:flex;gap:2px;flex-shrink:0">
+            ${openBtn}
+            <button data-remove="${i}" title="Remove" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:15px;font-weight:bold;padding:2px 4px;line-height:1">&times;</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  els.scrapeList.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+    cb.addEventListener("change", (e) => {
+      const idx = Number(e.target.dataset.idx);
+      scrapedSelected[idx] = e.target.checked;
+      els.scrapePreviewTitle.textContent = `${selectedScrapeCount()} of ${scrapedJobs.length} selected`;
+    });
+  });
+
+  els.scrapeList.querySelectorAll("[data-open]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const job = scrapedJobs[Number(e.currentTarget.dataset.open)];
+      if (job?.url) chrome.tabs.create({ url: job.url, active: false }).catch(() => {});
+    });
+  });
+
+  els.scrapeList.querySelectorAll("[data-remove]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      removeScrapedJob(Number(e.currentTarget.dataset.remove));
+    });
+  });
+}
+
+function removeScrapedJob(idx) {
+  if (idx < 0 || idx >= scrapedJobs.length) return;
+  scrapedJobs.splice(idx, 1);
+  scrapedSelected.splice(idx, 1);
+  if (scrapedJobs.length === 0) {
+    clearScrapePreview();
+    setStatus(els.saveStatus, "All scraped jobs removed.", "info");
+  } else {
+    renderScrapePreview();
+  }
+}
+
+function toggleAllScraped() {
+  const allSelected = selectedScrapeCount() === scrapedJobs.length;
+  scrapedSelected = scrapedJobs.map(() => !allSelected);
+  renderScrapePreview();
+}
+
+function clearScrapePreview() {
+  scrapedJobs = [];
+  scrapedSelected = [];
+  if (els.scrapePreview) els.scrapePreview.classList.add("hidden");
+  if (els.scrapeList) els.scrapeList.innerHTML = "";
+}
+
+async function saveScrapedJobs() {
+  const apiBaseUrl = getApiBaseUrl();
+  const toSave = scrapedJobs.filter((_, i) => scrapedSelected[i]);
+  if (toSave.length === 0) {
+    setStatus(els.saveStatus, "No jobs selected.", "info");
+    return;
+  }
+
+  els.scrapeSaveSelectedBtn.disabled = true;
+  setStatus(els.saveStatus, `Saving ${toSave.length}...`, "info");
+
+  let saved = 0;
+  let duplicates = 0;
+  for (const job of toSave) {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/jobs/save`, {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({
+          url: job.url,
+          title: job.title,
+          company: job.company,
+          location: job.location,
+          source: job.source || "extension_scrape",
+          raw_text: job.description || null,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.duplicate) duplicates++;
+        else saved++;
+      }
+    } catch (e) {
+      console.error("Error saving job:", e);
+    }
+  }
+
+  els.scrapeSaveSelectedBtn.disabled = false;
+  clearScrapePreview();
+  setStatus(
+    els.saveStatus,
+    `${saved} saved, ${duplicates} duplicates. Jobs auto-matched!`,
+    "success"
+  );
+  setTimeout(() => loadMatchedJobs(), 2000);
 }
 
 // Injected scrape functions
@@ -1732,25 +2375,32 @@ async function updatePageInfo() {
 // ─── Tab Switching ────────────────────────────────────────────
 
 els.tabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    const targetId = tab.dataset.tab;
-    els.tabs.forEach((t) => t.classList.remove("active"));
-    els.panels.forEach((p) => p.classList.remove("active"));
-    tab.classList.add("active");
-    document.getElementById(`panel-${targetId}`).classList.add("active");
-    if (targetId === "matched") loadMatchedJobs();
-    if (targetId === "myjobs") loadMyJobs();
-    if (targetId === "contacts") loadContacts();
-  });
+  tab.addEventListener("click", () => activateTab(tab.dataset.tab));
 });
+
+if (els.refreshCockpitBtn) {
+  els.refreshCockpitBtn.addEventListener("click", loadCockpit);
+}
+
+if (els.refreshAdminBtn) {
+  els.refreshAdminBtn.addEventListener("click", loadAdminOverview);
+}
 
 // ─── Event Listeners ──────────────────────────────────────────
 
 els.connectBtn.addEventListener("click", connect);
 els.disconnectBtn.addEventListener("click", disconnect);
 els.saveJobBtn.addEventListener("click", saveCurrentJob);
-els.scrapeVisibleBtn.addEventListener("click", () => scrapeAndSaveJobs(scrapeVisibleJobs));
-els.scrapeAllBtn.addEventListener("click", () => scrapeAndSaveJobs(scrapeAllJobsWithScroll));
+if (els.autofillPageBtn) els.autofillPageBtn.addEventListener("click", () => autofillCurrentPage(false));
+if (els.tailorAutofillPageBtn) els.tailorAutofillPageBtn.addEventListener("click", () => autofillCurrentPage(true));
+els.scrapeVisibleBtn.addEventListener("click", () => scrapeJobs(scrapeVisibleJobs));
+els.scrapeAllBtn.addEventListener("click", () => scrapeJobs(scrapeAllJobsWithScroll));
+if (els.scrapeSaveSelectedBtn) els.scrapeSaveSelectedBtn.addEventListener("click", saveScrapedJobs);
+if (els.scrapeToggleAllBtn) els.scrapeToggleAllBtn.addEventListener("click", toggleAllScraped);
+if (els.scrapeClearBtn) els.scrapeClearBtn.addEventListener("click", () => {
+  clearScrapePreview();
+  setStatus(els.saveStatus, "Scraped jobs discarded.", "info");
+});
 els.refreshMatchedBtn.addEventListener("click", loadMatchedJobs);
 if (els.openJobManagerBtn) {
   els.openJobManagerBtn.addEventListener("click", () => {
@@ -1786,6 +2436,19 @@ els.seekerSelect.addEventListener("change", (e) => {
   }
 });
 
+if (els.autoAutofill) {
+  els.autoAutofill.addEventListener("change", () => {
+    chrome.storage.local.set({ [STORAGE_KEYS.autoAutofill]: els.autoAutofill.checked });
+  });
+}
+if (els.orchestrateAll) {
+  els.orchestrateAll.addEventListener("change", () => {
+    chrome.storage.local.set({
+      [STORAGE_KEYS.orchestrateAllSeekers]: els.orchestrateAll.checked,
+    });
+  });
+}
+
 els.dryRun.addEventListener("change", () => {
   chrome.storage.local.set({ [STORAGE_KEYS.dryRun]: els.dryRun.checked });
 });
@@ -1793,6 +2456,12 @@ els.dryRun.addEventListener("change", () => {
 // ─── Initialize ───────────────────────────────────────────────
 
 async function init() {
+  // Keep the header version in sync with the manifest (no more stale strings).
+  const versionEl = document.getElementById("appVersion");
+  if (versionEl && chrome.runtime?.getManifest) {
+    versionEl.textContent = `v${chrome.runtime.getManifest().version}`;
+  }
+
   const result = await chrome.storage.local.get(Object.values(STORAGE_KEYS));
 
   authToken = result[STORAGE_KEYS.authToken] || null;
@@ -1801,6 +2470,9 @@ async function init() {
   setApiBaseUrl(DEFAULT_API_BASE_URL);
   await chrome.storage.local.set({ [STORAGE_KEYS.apiBaseUrl]: getApiBaseUrl() });
   els.dryRun.checked = result[STORAGE_KEYS.dryRun] || false;
+  if (els.autoAutofill) els.autoAutofill.checked = result[STORAGE_KEYS.autoAutofill] || false;
+  if (els.orchestrateAll)
+    els.orchestrateAll.checked = result[STORAGE_KEYS.orchestrateAllSeekers] || false;
   updateRunnerUI(result[STORAGE_KEYS.runnerEnabled] || false);
 
   if (authToken && amInfo) {
@@ -1816,6 +2488,42 @@ async function init() {
   }
 
   updatePageInfo();
+
+  // Check for session expiry warnings
+  checkSessionWarnings();
+}
+
+async function checkSessionWarnings() {
+  const { sessionWarning } = await chrome.storage.local.get("sessionWarning");
+  if (!sessionWarning) return;
+
+  // Only show warnings from the last 24 hours
+  if (Date.now() - sessionWarning.timestamp > 24 * 60 * 60 * 1000) {
+    await chrome.storage.local.remove("sessionWarning");
+    chrome.action.setBadgeText({ text: "" });
+    return;
+  }
+
+  const warningBanner = document.createElement("div");
+  warningBanner.className = "session-warning";
+  warningBanner.style.cssText =
+    "background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:8px 12px;" +
+    "margin:8px 0;display:flex;align-items:center;gap:8px;font-size:12px;color:#991B1B;";
+  warningBanner.innerHTML =
+    `<span style="font-size:16px">⚠️</span>` +
+    `<span><strong>${sessionWarning.platform}</strong>: ${sessionWarning.message}</span>` +
+    `<button id="dismissSessionWarning" style="margin-left:auto;background:none;border:none;` +
+    `color:#991B1B;cursor:pointer;font-size:14px;">×</button>`;
+
+  const mainApp = document.getElementById("mainApp");
+  if (mainApp) {
+    mainApp.insertBefore(warningBanner, mainApp.firstChild);
+    document.getElementById("dismissSessionWarning")?.addEventListener("click", async () => {
+      warningBanner.remove();
+      await chrome.storage.local.remove("sessionWarning");
+      chrome.action.setBadgeText({ text: "" });
+    });
+  }
 }
 
 init();

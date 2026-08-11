@@ -159,7 +159,7 @@ export async function POST(request: Request) {
         approved_max_installments: approvedMaxInstallments,
         approved_window_days: approvedWindowDays,
       },
-    }).catch(() => null);
+    }).catch((err) => { console.error("[billing] send flex review email failed:", err); return null; });
   }
 
   return NextResponse.json({ ok: true, request: updated });

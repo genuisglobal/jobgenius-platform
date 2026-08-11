@@ -8,11 +8,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const { data: interviews, error } = await supabaseAdmin
+  const { searchParams } = new URL(request.url);
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") ?? "25", 10) || 25));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const { data: interviews, error, count } = await supabaseAdmin
     .from("interviews")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("job_seeker_id", auth.user.id)
-    .order("scheduled_at", { ascending: true });
+    .order("scheduled_at", { ascending: true })
+    .range(from, to);
 
   if (error) {
     return NextResponse.json({ error: "Failed to load interviews." }, { status: 500 });
@@ -33,5 +40,11 @@ export async function GET(request: Request) {
   return NextResponse.json({
     interviews: interviews || [],
     prep,
+    pagination: {
+      page,
+      pageSize,
+      total: count ?? 0,
+      totalPages: Math.ceil((count ?? 0) / pageSize),
+    },
   });
 }

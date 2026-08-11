@@ -1,6 +1,13 @@
 import { resolveJobTargetUrl } from "@/lib/job-url";
 
-type AtsType = "LINKEDIN" | "GREENHOUSE" | "WORKDAY" | "GENERIC";
+type AtsType =
+  | "LINKEDIN"
+  | "GREENHOUSE"
+  | "WORKDAY"
+  | "LEVER"
+  | "SMARTRECRUITERS"
+  | "INDEED"
+  | "GENERIC";
 
 const STEP_SETS: Record<AtsType, string[]> = {
   LINKEDIN: [
@@ -25,6 +32,30 @@ const STEP_SETS: Record<AtsType, string[]> = {
     "FILL_FORM",
     "UPLOAD_RESUME",
     "REVIEW",
+    "SUBMIT",
+    "CONFIRMATION",
+  ],
+  LEVER: [
+    "OPEN_JOB",
+    "TRY_APPLY_ENTRY",
+    "FILL_FORM",
+    "UPLOAD_RESUME",
+    "SUBMIT",
+    "CONFIRMATION",
+  ],
+  SMARTRECRUITERS: [
+    "OPEN_JOB",
+    "TRY_APPLY_ENTRY",
+    "FILL_FORM",
+    "UPLOAD_RESUME",
+    "SUBMIT",
+    "CONFIRMATION",
+  ],
+  INDEED: [
+    "OPEN_JOB",
+    "TRY_APPLY_ENTRY",
+    "FILL_FORM",
+    "UPLOAD_RESUME",
     "SUBMIT",
     "CONFIRMATION",
   ],
@@ -60,11 +91,17 @@ export function detectAtsType(source?: string | null, url?: string | null): AtsT
     return "LINKEDIN";
   }
 
+  if (combined.includes("lever.co")) {
+    return "LEVER";
+  }
+
+  if (combined.includes("smartrecruiters")) {
+    return "SMARTRECRUITERS";
+  }
+
   if (
-    combined.includes("lever.co") ||
     combined.includes("ashby") ||
     combined.includes("jobvite") ||
-    combined.includes("smartrecruiters") ||
     combined.includes("icims") ||
     combined.includes("workable") ||
     combined.includes("recruitee") ||
@@ -72,9 +109,36 @@ export function detectAtsType(source?: string | null, url?: string | null): AtsT
     combined.includes("successfactors") ||
     combined.includes("taleo") ||
     combined.includes("oraclecloud") ||
-    combined.includes("personio")
+    combined.includes("personio") ||
+    combined.includes("breezy.hr") ||
+    combined.includes("applytojob.com") ||
+    combined.includes("jazzhr")
   ) {
     return "GENERIC";
+  }
+
+  // Job board aggregators — these redirect to company career pages
+  if (
+    combined.includes("themuse.com") ||
+    combined.includes("arbeitnow.com") ||
+    combined.includes("remotive.com") ||
+    combined.includes("remoteok.com") ||
+    combined.includes("jobicy.com") ||
+    combined.includes("himalayas.app") ||
+    combined.includes("startup.jobs") ||
+    combined.includes("wellfound.com") ||
+    combined.includes("builtin.com") ||
+    combined.includes("findwork.dev") ||
+    combined.includes("glassdoor.com")
+  ) {
+    return "GENERIC";
+  }
+
+  // Indeed LAST among named boards: an Indeed link that resolves (via
+  // resolveJobTargetUrl) to a real ATS keeps the more specific type above —
+  // INDEED means "the application actually happens on Indeed/SmartApply".
+  if (combined.includes("indeed.com")) {
+    return "INDEED";
   }
 
   return "GENERIC";

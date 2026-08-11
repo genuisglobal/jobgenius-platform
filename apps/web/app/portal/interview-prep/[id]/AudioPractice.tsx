@@ -327,7 +327,7 @@ export default function AudioPractice({
             )}
 
             {state === "processing" && (
-              <div className="px-6 py-3 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg">
+              <div className="px-6 py-3 bg-violet-100 text-violet-700 text-sm font-medium rounded-lg">
                 Scoring your answer...
               </div>
             )}

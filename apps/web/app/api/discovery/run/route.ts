@@ -20,6 +20,8 @@ type RunDiscoveryPayload = {
  *
  * For immediate results, use the runner's CLI directly:
  *   node src/discovery-cli.js linkedin "https://linkedin.com/jobs/search?..."
+ *   node src/discovery-cli.js smartrecruiters "https://jobs.smartrecruiters.com/Stripe"
+ *   node src/discovery-cli.js workday "https://wd5.myworkdaysite.com/recruiting/company/careers"
  */
 export async function POST(request: Request) {
   let payload: RunDiscoveryPayload;
@@ -119,8 +121,8 @@ export async function GET() {
     usage: {
       endpoint: "POST /api/discovery/run",
       body: {
-        source_name: "linkedin | indeed | glassdoor",
-        search_url: "Full search URL from the job board",
+        source_name: "linkedin | indeed | glassdoor | greenhouse | lever | ashby | workday | smartrecruiters",
+        search_url: "Full search URL from the job board or ATS career page",
         job_seeker_id: "(optional) Associate discovered jobs with a seeker",
         options: {
           max_pages: "Maximum pages to scrape (default: 5)",
@@ -130,11 +132,10 @@ export async function GET() {
       },
     },
     example: {
-      source_name: "linkedin",
-      search_url: "https://www.linkedin.com/jobs/search?keywords=software%20engineer&location=San%20Francisco",
+      source_name: "smartrecruiters",
+      search_url: "https://jobs.smartrecruiters.com/Stripe",
       options: {
-        max_pages: 3,
-        max_jobs: 30,
+        max_jobs: 50,
       },
     },
   });

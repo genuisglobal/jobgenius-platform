@@ -4,10 +4,27 @@ import { cookies } from "next/headers";
 import { getCurrentUser } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/auth";
 import { hasOpenTask } from "@/lib/conversations/tasks";
+import {
+  formatCapacityMonthLabel,
+  getIntakeStateByJobSeekerId,
+  type IntakeStateRecord,
+} from "@/lib/intake";
 
 type AccountManagerSummary = {
   name: string | null;
   email: string | null;
+};
+
+type IntakeViewModel = {
+  eyebrow: string;
+  title: string;
+  body: string;
+  tone: "amber" | "blue" | "green" | "red";
+  primaryHref: string;
+  primaryLabel: string;
+  secondaryHref?: string;
+  secondaryLabel?: string;
+  meta?: string;
 };
 
 async function getAssignedAccountManager(jobSeekerId: string): Promise<AccountManagerSummary | null> {
@@ -54,6 +71,156 @@ async function getAssignedAccountManager(jobSeekerId: string): Promise<AccountMa
   return null;
 }
 
+function formatShortDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return new Date(value).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function buildIntakeStatusView(intakeState: IntakeStateRecord): IntakeViewModel {
+  const capacityLabel = intakeState.capacity_month
+    ? formatCapacityMonthLabel(intakeState.capacity_month)
+    : null;
+  const previewExpiryLabel = formatShortDate(intakeState.preview_expires_at);
+
+  switch (intakeState.status) {
+    case "approved_payment_pending":
+      return {
+        eyebrow: "Spot Reserved",
+        title: "Your onboarding spot is reserved.",
+        body: "Finish your registration payment to unlock live applications, outreach, and account manager execution.",
+        tone: "green",
+        primaryHref: "/portal/billing",
+        primaryLabel: "Finish Billing Setup",
+        secondaryHref: "/portal/profile",
+        secondaryLabel: "Review Profile",
+        meta: capacityLabel ? `Reserved against ${capacityLabel} capacity.` : undefined,
+      };
+    case "waitlisted":
+      return {
+        eyebrow: "Waitlist",
+        title: "You are in the next review window.",
+        body: "This month's onboarding spots are currently full. We will reach back out as soon as a real account manager slot opens.",
+        tone: "blue",
+        primaryHref: "/portal/profile",
+        primaryLabel: "Review Your Profile",
+        secondaryHref: "/portal/billing",
+        secondaryLabel: "View Billing",
+        meta: capacityLabel ? `Current capacity window: ${capacityLabel}.` : undefined,
+      };
+    case "rejected":
+      return {
+        eyebrow: "Not Approved",
+        title: "We could not approve this search yet.",
+        body: "Your current profile is not approved for a managed onboarding spot. You can still update your profile and billing details while we reassess future intake.",
+        tone: "red",
+        primaryHref: "/portal/profile",
+        primaryLabel: "Update Profile",
+        secondaryHref: "/portal/billing",
+        secondaryLabel: "View Billing",
+      };
+    case "approved_preview":
+      return {
+        eyebrow: "Strategy Preview",
+        title: "Your strategy preview slot is approved.",
+        body: "Your account manager can now prepare your resume audit, target-role plan, and kickoff notes. Live applications and outreach still wait until registration funding is confirmed.",
+        tone: "green",
+        primaryHref: "/portal/billing",
+        primaryLabel: "View Conversion Options",
+        secondaryHref: "/portal/profile",
+        secondaryLabel: "Review Profile",
+        meta: capacityLabel ? `Reserved against ${capacityLabel} preview capacity.` : undefined,
+      };
+    case "call_completed":
+      return {
+        eyebrow: "First Call Complete",
+        title: "Your intro call is complete.",
+        body: "We have the information needed to move your preview forward. The next step is preview approval, which still happens before any financial commitment.",
+        tone: "green",
+        secondaryHref: "/portal/profile",
+        secondaryLabel: "Review Profile",
+        primaryHref: "/portal/profile",
+        primaryLabel: "Review Profile",
+      };
+    case "preview_active":
+      return {
+        eyebrow: "Strategy Preview",
+        title: "Your strategy preview is live.",
+        body: "Your account manager is in the planning window now. Convert to full service to move into live applications and outreach.",
+        tone: "green",
+        primaryHref: "/portal/billing",
+        primaryLabel: "Convert to Full Service",
+        secondaryHref: "/portal/profile",
+        secondaryLabel: "Review Profile",
+        meta: previewExpiryLabel
+          ? `Preview window ends on ${previewExpiryLabel}.`
+          : undefined,
+      };
+    case "preview_expired":
+      return {
+        eyebrow: "Preview Expired",
+        title: "Your preview window has ended.",
+        body: "Complete your registration payment to reserve a spot and move into live search execution.",
+        tone: "amber",
+        primaryHref: "/portal/billing",
+        primaryLabel: "Convert to Full Service",
+        secondaryHref: "/portal/profile",
+        secondaryLabel: "Review Profile",
+        meta: previewExpiryLabel ? `Preview ended on ${previewExpiryLabel}.` : undefined,
+      };
+    case "submitted":
+    case "pending_review":
+    default:
+      return {
+        eyebrow: "Pending Review",
+        title: "Your onboarding is under review.",
+        body: "We review fit before a spot is reserved. Your profile is saved, and the next update will come from the team once review is complete.",
+        tone: "amber",
+        secondaryHref: "/portal/profile",
+        secondaryLabel: "Review Profile",
+        primaryHref: "/portal/profile",
+        primaryLabel: "Review Profile",
+      };
+  }
+}
+
+function toneClasses(tone: IntakeViewModel["tone"]) {
+  switch (tone) {
+    case "green":
+      return {
+        shell: "border-green-200 bg-green-50",
+        eyebrow: "text-green-700",
+        body: "text-green-900/85",
+        button: "bg-green-600 hover:bg-green-700",
+      };
+    case "blue":
+      return {
+        shell: "border-violet-200 bg-violet-50",
+        eyebrow: "text-violet-700",
+        body: "text-violet-900/85",
+        button: "bg-violet-600 hover:bg-violet-700",
+      };
+    case "red":
+      return {
+        shell: "border-red-200 bg-red-50",
+        eyebrow: "text-red-700",
+        body: "text-red-900/85",
+        button: "bg-red-600 hover:bg-red-700",
+      };
+    case "amber":
+    default:
+      return {
+        shell: "border-amber-200 bg-amber-50",
+        eyebrow: "text-amber-700",
+        body: "text-amber-900/85",
+        button: "bg-amber-600 hover:bg-amber-700",
+      };
+  }
+}
+
 export default async function PortalPage() {
   const user = await getCurrentUser();
   // Layout already handles redirect, but guard for safety
@@ -73,6 +240,75 @@ export default async function PortalPage() {
   // Redirect to onboarding if new user (hasn't completed onboarding and hasn't skipped)
   if (jobSeeker && !jobSeeker.onboarding_completed_at && !skippedOnboarding) {
     redirect("/portal/onboarding");
+  }
+
+  const intakeState = await getIntakeStateByJobSeekerId(user.id);
+  const accountManager = await getAssignedAccountManager(user.id);
+
+  if (
+    intakeState &&
+    [
+      "submitted",
+      "pending_review",
+      "call_completed",
+      "waitlisted",
+      "rejected",
+      "approved_payment_pending",
+      "approved_preview",
+      "preview_active",
+      "preview_expired",
+    ].includes(intakeState.status)
+  ) {
+    const view = buildIntakeStatusView(intakeState);
+    const tone = toneClasses(view.tone);
+
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className={`rounded-3xl border p-8 shadow-sm ${tone.shell}`}>
+          <p className={`text-sm font-semibold uppercase tracking-[0.2em] ${tone.eyebrow}`}>
+            {view.eyebrow}
+          </p>
+          <h1 className="mt-3 text-3xl font-bold text-gray-900">{view.title}</h1>
+          <p className={`mt-4 max-w-2xl text-base leading-relaxed ${tone.body}`}>
+            {view.body}
+          </p>
+          {view.meta && <p className={`mt-3 text-sm ${tone.body}`}>{view.meta}</p>}
+
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href={view.primaryHref}
+              className={`inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-semibold text-white transition-colors ${tone.button}`}
+            >
+              {view.primaryLabel}
+            </Link>
+            {view.secondaryHref && view.secondaryLabel && (
+              <Link
+                href={view.secondaryHref}
+                className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                {view.secondaryLabel}
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {accountManager && (
+          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900">Assigned Account Manager</h2>
+            <p className="mt-3 font-medium text-gray-900">
+              {accountManager.name || "Assigned account manager"}
+            </p>
+            {accountManager.email && (
+              <p className="text-sm text-gray-600">{accountManager.email}</p>
+            )}
+            <p className="mt-3 text-sm text-gray-500">
+              Your search owner has been attached to this onboarding slot. Live execution
+              begins once your current intake status allows it.
+            </p>
+          </div>
+        )}
+      </div>
+    );
   }
 
   // Get application stats
@@ -138,7 +374,6 @@ export default async function PortalPage() {
     ).length;
   }
 
-  const accountManager = await getAssignedAccountManager(user.id);
   const profileCompletion = jobSeeker?.profile_completion ?? 0;
 
   // Determine pipeline stage
@@ -209,22 +444,22 @@ export default async function PortalPage() {
           </div>
           <Link
             href="/portal/progress"
-            className="flex items-center gap-3 px-4 py-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+            className="flex items-center gap-3 px-4 py-2 bg-violet-50 rounded-lg hover:bg-violet-100 transition-colors"
           >
             <div className="relative w-12 h-12">
               <svg className="w-12 h-12 -rotate-90" viewBox="0 0 36 36">
                 <circle cx="18" cy="18" r="15.915" fill="none" stroke="#e5e7eb" strokeWidth="3" />
                 <circle
-                  cx="18" cy="18" r="15.915" fill="none" stroke="#3b82f6" strokeWidth="3"
+                  cx="18" cy="18" r="15.915" fill="none" stroke="#8b5cf6" strokeWidth="3"
                   strokeDasharray={`${profileCompletion} ${100 - profileCompletion}`}
                   strokeLinecap="round"
                 />
               </svg>
-              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-blue-700">
+              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-violet-700">
                 {profileCompletion}%
               </span>
             </div>
-            <span className="text-sm font-medium text-blue-700">Profile</span>
+            <span className="text-sm font-medium text-violet-700">Profile</span>
           </Link>
         </div>
       </div>
@@ -240,22 +475,22 @@ export default async function PortalPage() {
               <div key={stage.key} className="flex-1 flex items-center">
                 <div className="flex flex-col items-center w-full">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
-                    isCompleted ? "bg-blue-600 border-blue-600 text-white" :
-                    isActive ? "bg-white border-blue-600 text-blue-600" :
+                    isCompleted ? "bg-violet-600 border-violet-600 text-white" :
+                    isActive ? "bg-white border-violet-600 text-violet-600" :
                     "bg-white border-gray-200 text-gray-400"
                   }`}>
                     {isCompleted ? "✓" : idx + 1}
                   </div>
                   <span className={`mt-1 text-xs text-center leading-tight ${
-                    isActive ? "text-blue-700 font-semibold" :
-                    isCompleted ? "text-blue-600" :
+                    isActive ? "text-violet-700 font-semibold" :
+                    isCompleted ? "text-violet-600" :
                     "text-gray-400"
                   }`}>
                     {stage.label}
                   </span>
                 </div>
                 {idx < PIPELINE_STAGES.length - 1 && (
-                  <div className={`flex-1 h-0.5 mx-1 mb-4 ${idx < stageIndex ? "bg-blue-600" : "bg-gray-200"}`} />
+                  <div className={`flex-1 h-0.5 mx-1 mb-4 ${idx < stageIndex ? "bg-violet-600" : "bg-gray-200"}`} />
                 )}
               </div>
             );
@@ -271,7 +506,7 @@ export default async function PortalPage() {
         </div>
         <div className="bg-white rounded-lg shadow p-5">
           <div className="text-sm font-medium text-gray-500">In Queue</div>
-          <div className="mt-1 text-3xl font-bold text-blue-600">{pendingApplications ?? 0}</div>
+          <div className="mt-1 text-3xl font-bold text-violet-600">{pendingApplications ?? 0}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-5">
           <div className="text-sm font-medium text-gray-500">Upcoming Interviews</div>
@@ -316,9 +551,9 @@ export default async function PortalPage() {
                 <li key={action.label}>
                   <Link
                     href={action.href}
-                    className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"
+                    className="flex items-center gap-2 text-sm text-violet-600 hover:text-violet-800"
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0" />
                     {action.label}
                   </Link>
                 </li>
@@ -337,7 +572,7 @@ export default async function PortalPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Upcoming Interviews</h3>
-            <Link href="/portal/interviews" className="text-sm text-blue-600 hover:text-blue-800">
+            <Link href="/portal/interviews" className="text-sm text-violet-600 hover:text-violet-800">
               View all
             </Link>
           </div>
@@ -370,7 +605,7 @@ export default async function PortalPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Your Skills</h3>
-            <Link href="/portal/profile" className="text-sm text-blue-600 hover:text-blue-800">
+            <Link href="/portal/profile" className="text-sm text-violet-600 hover:text-violet-800">
               Edit
             </Link>
           </div>
@@ -378,7 +613,7 @@ export default async function PortalPage() {
             {jobSeeker.skills.map((skill: string) => (
               <span
                 key={skill}
-                className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                className="px-3 py-1 bg-violet-100 text-violet-800 rounded-full text-sm"
               >
                 {skill}
               </span>

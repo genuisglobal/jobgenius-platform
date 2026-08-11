@@ -1,0 +1,189 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, "codex/**"]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web — typecheck & tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Tests
+        run: npm run test
+
+  runners:
+    # The extension and cloud runner ship plain JS with no build step, so a
+    # syntax error in a file the vitest jsdom suites don't load (background.js,
+    # popup.js, worker.js, adapters) would otherwise reach users silently.
+    name: Extension & cloud runner — syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Syntax-check extension + runner JS
+        run: |
+          set -e
+          count=0
+          while IFS= read -r f; do
+            node --check "$f"
+            count=$((count + 1))
+          done < <(find apps/extension apps/runner -name "*.js" -not -path "*/node_modules/*")
+          echo "Checked $count files."
+
+      - name: Validate extension manifest
+        run: node -e "JSON.parse(require('fs').readFileSync('apps/extension/manifest.json', 'utf8')); console.log('manifest.json OK')"
+
+  # Real-browser fixture tests: the ACTUAL runner files driven in headless
+  # Chromium against pages cloning Greenhouse/Lever/Workday/LinkedIn
+  # structures (apps/extension/tests). Catches selector/scoring/visibility
+  # regressions that the jsdom suites in apps/web can only approximate.
+  extension-browser:
+    name: Extension — Playwright fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: apps/extension
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/extension/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -e "console.log(require('@playwright/test/package.json').version)")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ steps.pw.outputs.version }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run fixture tests
+        run: npx playwright test
+
+  # Cloud-runner Workday adapter driven through a fixture tenant flow
+  # (auth wall + account creation, automation-id fills, async listbox,
+  # error-banner validation, wizard traversal) in headless Chromium.
+  runner-browser:
+    name: Cloud runner — Workday fixture
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    defaults:
+      run:
+        working-directory: apps/runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/runner/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -e "console.log(require('playwright/package.json').version)")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-runner-chromium-${{ steps.pw.outputs.version }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Workday fixture
+        run: npm run test:workday
+
+  # Production deploy, gated on the test jobs above. Replaces running
+  # `vercel --prod` from a laptop, which deploys whatever the local working
+  # tree happens to contain with no guarantee tests ever ran.
+  #
+  # Skips (with a notice) until these repo secrets are configured:
+  #   VERCEL_TOKEN       — vercel.com/account/tokens
+  #   VERCEL_ORG_ID      — apps/web/.vercel/project.json after `vercel link`
+  #   VERCEL_PROJECT_ID  — same file
+  deploy:
+    name: Deploy web to Vercel (production)
+    needs: [web, runners, extension-browser, runner-browser]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Vercel secrets
+        id: vercel
+        run: |
+          if [ -n "${{ secrets.VERCEL_TOKEN }}" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Vercel secrets not configured — deploy skipped. Set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID repo secrets to enable CI deploys and retire local 'vercel --prod'."
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.vercel.outputs.configured == 'true'
+        with:
+          node-version: 22
+
+      - name: Pull Vercel production environment
+        if: steps.vercel.outputs.configured == 'true'
+        run: npx vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Build
+        if: steps.vercel.outputs.configured == 'true'
+        run: npx vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Deploy
+        if: steps.vercel.outputs.configured == 'true'
+        run: npx vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"

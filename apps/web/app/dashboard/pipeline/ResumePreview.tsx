@@ -89,7 +89,7 @@ export default function ResumePreview({
             onChange={(e) =>
               updateField("contact", { ...c, fullName: e.target.value })
             }
-            className={`${style.nameClass} w-full bg-blue-50 border border-blue-200 rounded px-2 py-1 ${style.nameAlign}`}
+            className={`${style.nameClass} w-full bg-violet-50 border border-violet-200 rounded px-2 py-1 ${style.nameAlign}`}
           />
         ) : (
           <h2 className={style.nameClass}>{c.fullName}</h2>
@@ -114,7 +114,7 @@ export default function ResumePreview({
               <textarea
                 value={data.summary}
                 onChange={(e) => updateField("summary", e.target.value)}
-                className="w-full bg-blue-50 border border-blue-200 rounded px-2 py-1 text-sm resize-y"
+                className="w-full bg-violet-50 border border-violet-200 rounded px-2 py-1 text-sm resize-y"
                 rows={3}
               />
             ) : (
@@ -132,7 +132,7 @@ export default function ResumePreview({
           </h3>
           <div className="mt-2 space-y-3">
             {data.workExperience.map((w, i) => (
-              <div key={i} className={editMode ? "bg-blue-50 border border-blue-200 rounded p-3" : ""}>
+              <div key={i} className={editMode ? "bg-violet-50 border border-violet-200 rounded p-3" : ""}>
                 {editMode ? (
                   <>
                     <div className="grid grid-cols-2 gap-2 mb-2">
@@ -187,7 +187,7 @@ export default function ResumePreview({
                       ))}
                       <button
                         onClick={() => updateWorkExperience(i, "bullets", [...w.bullets, ""])}
-                        className="text-xs text-blue-600 hover:text-blue-800"
+                        className="text-xs text-violet-600 hover:text-violet-800"
                       >
                         + Add bullet
                       </button>
@@ -230,7 +230,7 @@ export default function ResumePreview({
           <h3 className={style.sectionClass}>Education</h3>
           <div className="mt-2 space-y-2">
             {data.education.map((e, i) => (
-              <div key={i} className={editMode ? "bg-blue-50 border border-blue-200 rounded p-3" : ""}>
+              <div key={i} className={editMode ? "bg-violet-50 border border-violet-200 rounded p-3" : ""}>
                 {editMode ? (
                   <div className="grid grid-cols-2 gap-2">
                     <input
@@ -286,12 +286,12 @@ export default function ResumePreview({
                 {data.skills.map((s, i) => (
                   <span
                     key={i}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-100 text-violet-800 text-xs rounded-full"
                   >
                     {s}
                     <button
                       onClick={() => removeSkill(i)}
-                      className="text-blue-600 hover:text-blue-900 font-bold"
+                      className="text-violet-600 hover:text-violet-900 font-bold"
                     >
                       x
                     </button>
@@ -353,7 +353,7 @@ function SkillAdder({ onAdd }: { onAdd: (skill: string) => void }) {
       />
       <button
         onClick={handleAdd}
-        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+        className="text-xs text-violet-600 hover:text-violet-800 font-medium"
       >
         +
       </button>

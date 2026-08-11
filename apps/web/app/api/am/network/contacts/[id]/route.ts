@@ -121,11 +121,15 @@ export async function PUT(
 
   // Log status change activity
   if (body.status !== undefined) {
-    await supabaseAdmin.from("network_contact_activity").insert({
+    const { error: activityError } = await supabaseAdmin.from("network_contact_activity").insert({
       network_contact_id: params.id,
       activity_type: "status_changed",
       details: { new_status: body.status },
     });
+
+    if (activityError) {
+      console.error("[am:network] failed to log status change activity:", activityError);
+    }
   }
 
   return NextResponse.json({ contact });

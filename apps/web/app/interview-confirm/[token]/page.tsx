@@ -29,7 +29,7 @@ export default async function InterviewConfirmPage({ params }: PageProps) {
     return (
       <main style={{ fontFamily: "sans-serif", maxWidth: 600, margin: "40px auto", padding: "0 16px" }}>
         <p style={{ marginBottom: 24 }}>
-          <Link href="/" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>
+          <Link href="/" style={{ color: "#7c3aed", textDecoration: "none", fontWeight: 600 }}>
             JobGenius
           </Link>
         </p>
@@ -77,7 +77,7 @@ export default async function InterviewConfirmPage({ params }: PageProps) {
     return (
       <main style={{ fontFamily: "sans-serif", maxWidth: 600, margin: "40px auto", padding: "0 16px" }}>
         <p style={{ marginBottom: 24 }}>
-          <Link href="/" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>
+          <Link href="/" style={{ color: "#7c3aed", textDecoration: "none", fontWeight: 600 }}>
             JobGenius
           </Link>
         </p>
@@ -126,7 +126,7 @@ export default async function InterviewConfirmPage({ params }: PageProps) {
     return (
       <main style={{ fontFamily: "sans-serif", maxWidth: 600, margin: "40px auto", padding: "0 16px" }}>
         <p style={{ marginBottom: 24 }}>
-          <Link href="/" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>
+          <Link href="/" style={{ color: "#7c3aed", textDecoration: "none", fontWeight: 600 }}>
             JobGenius
           </Link>
         </p>
@@ -139,7 +139,7 @@ export default async function InterviewConfirmPage({ params }: PageProps) {
   return (
     <main style={{ fontFamily: "sans-serif", maxWidth: 600, margin: "40px auto", padding: "0 16px" }}>
       <p style={{ marginBottom: 24 }}>
-        <Link href="/" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>
+        <Link href="/" style={{ color: "#7c3aed", textDecoration: "none", fontWeight: 600 }}>
           JobGenius
         </Link>
       </p>

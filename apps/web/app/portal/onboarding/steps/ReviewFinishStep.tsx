@@ -36,6 +36,7 @@ function calculateScore(profile: ProfileData): number {
   check(profile.notice_period);
   check(profile.authorized_to_work);
   check(profile.citizenship_status);
+  check(profile.non_compete_subject);
 
   return total > 0 ? Math.round((score / total) * 100) : 0;
 }
@@ -90,7 +91,7 @@ function SummaryCard({
         <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
         <button
           onClick={() => goToStep(stepIndex)}
-          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+          className="text-xs text-violet-600 hover:text-violet-800 font-medium"
         >
           Edit
         </button>
@@ -122,13 +123,22 @@ function SummaryCard({
 
 export default function ReviewFinishStep({
   profile,
+  summaryStepIndexes,
   saving,
+  finishError,
   goToStep,
   onFinish,
   onBack,
 }: {
   profile: ProfileData;
+  summaryStepIndexes: {
+    about: number;
+    preferences: number;
+    workstyle: number;
+    salary: number;
+  };
   saving: boolean;
+  finishError?: string | null;
   goToStep: (step: number) => void;
   onFinish: () => void;
   onBack: () => void;
@@ -167,7 +177,9 @@ export default function ReviewFinishStep({
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-xl font-semibold text-gray-900 mb-1">Review Your Profile</h2>
-      <p className="text-sm text-gray-500 mb-6">Review your information below. You can edit anything by clicking &quot;Edit&quot; on each section.</p>
+      <p className="text-sm text-gray-500 mb-6">
+        Review your information below. When you submit, onboarding is complete.
+      </p>
 
       <div className="flex justify-center mb-8">
         <ProfileScoreRing score={score} />
@@ -181,10 +193,16 @@ export default function ReviewFinishStep({
         </div>
       )}
 
+      {finishError && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {finishError}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <SummaryCard
           title="About You"
-          stepIndex={1}
+          stepIndex={summaryStepIndexes.about}
           goToStep={goToStep}
           items={[
             { label: "Name", value: profile.full_name, missing: isEmpty(profile.full_name) },
@@ -195,7 +213,7 @@ export default function ReviewFinishStep({
         />
         <SummaryCard
           title="Job Preferences"
-          stepIndex={2}
+          stepIndex={summaryStepIndexes.preferences}
           goToStep={goToStep}
           items={[
             { label: "Seniority", value: profile.seniority, missing: isEmpty(profile.seniority) },
@@ -206,7 +224,7 @@ export default function ReviewFinishStep({
         />
         <SummaryCard
           title="Work Style & Location"
-          stepIndex={3}
+          stepIndex={summaryStepIndexes.workstyle}
           goToStep={goToStep}
           items={[
             { label: "Work Preferences", value: formatLocPrefs(), missing: isEmpty(profile.location_preferences) },
@@ -215,14 +233,41 @@ export default function ReviewFinishStep({
         />
         <SummaryCard
           title="Salary & Availability"
-          stepIndex={4}
+          stepIndex={summaryStepIndexes.salary}
           goToStep={goToStep}
           items={[
             { label: "Salary Range", value: formatSalary(), missing: isEmpty(profile.salary_min) && isEmpty(profile.salary_max) },
             { label: "Start Date", value: profile.start_date, missing: isEmpty(profile.start_date) },
             { label: "Work Authorization", value: profile.authorized_to_work === true ? "Authorized" : profile.authorized_to_work === false ? "Not authorized" : undefined, missing: profile.authorized_to_work === undefined },
+            { label: "Non-Compete", value: profile.non_compete_subject === true ? "Yes" : profile.non_compete_subject === false ? "No" : undefined, missing: profile.non_compete_subject === undefined },
           ]}
         />
+      </div>
+
+      {/* Glimpse of how JobGenius is paid — informational only, no signature here. */}
+      <div className="mt-6 rounded-lg border border-violet-200 bg-violet-50 p-4">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">
+            5%
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-gray-900">How JobGenius is paid</p>
+            <p className="mt-1 text-xs leading-relaxed text-gray-600">
+              A one-time Campaign Setup &amp; Execution Fee ($300 Essentials / $600 Premium) is due when
+              you activate a paid Job Search Campaign, plus a 5% placement fee only when you accept a job
+              we help you land, due within two months of your start date. Your account manager will share
+              the full service agreement for signature when the time is right.{" "}
+              <a href="/portal/agreement" className="font-medium text-violet-700 hover:text-violet-900">
+                Preview the agreement
+              </a>{" "}
+              or{" "}
+              <a href="/pricing" className="font-medium text-violet-700 hover:text-violet-900">
+                see plan details
+              </a>
+              .
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="flex justify-between mt-8">
@@ -234,7 +279,9 @@ export default function ReviewFinishStep({
           disabled={saving}
           className="px-8 py-2.5 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50"
         >
-          {saving ? "Finishing..." : "Finish & Go to Dashboard"}
+          {saving
+            ? "Saving..."
+            : "Submit Onboarding"}
         </button>
       </div>
     </div>

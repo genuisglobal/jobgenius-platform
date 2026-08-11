@@ -1,5 +1,10 @@
 import { requireJobSeeker } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/auth";
+import {
+  computeDashboardStats,
+  type DashboardProgress,
+  type DashboardTrack,
+} from "@/lib/learning/dashboard-metrics";
 
 export async function GET(request: Request) {
   const auth = await requireJobSeeker(request);
@@ -10,80 +15,42 @@ export async function GET(request: Request) {
   // Get all progress records for this seeker
   const { data: progress } = await supabaseAdmin
     .from("learning_progress")
-    .select("*")
+    .select("lesson_id, status, completed_at, time_spent_seconds, mastery_score, next_review_at")
     .eq("job_seeker_id", auth.user.id);
-
-  const records = progress ?? [];
-  const completed = records.filter((r) => r.status === "completed");
-  const totalTime = records.reduce((sum, r) => sum + (r.time_spent_seconds ?? 0), 0);
 
   // Get total tracks assigned
   const { data: tracks } = await supabaseAdmin
     .from("learning_tracks")
-    .select("id, learning_lessons ( id )")
+    .select("id, creation_mode, learning_lessons ( id, skill_slug )")
     .eq("job_seeker_id", auth.user.id)
     .eq("status", "published");
 
-  const totalLessons = (tracks ?? []).reduce(
-    (sum, t) => sum + ((t.learning_lessons as { id: string }[])?.length ?? 0),
-    0
+  const stats = computeDashboardStats(
+    (tracks as DashboardTrack[] | null) ?? [],
+    (progress as DashboardProgress[] | null) ?? [],
+    new Date()
   );
-
-  // Calculate streak (consecutive days with completed lessons)
-  const completedDates = completed
-    .filter((r) => r.completed_at)
-    .map((r) => new Date(r.completed_at).toISOString().split("T")[0])
-    .sort()
-    .reverse();
-
-  const seenDates: Record<string, boolean> = {};
-  const uniqueDates = completedDates.filter((date) => {
-    if (seenDates[date]) return false;
-    seenDates[date] = true;
-    return true;
-  });
-  let streak = 0;
-  const today = new Date().toISOString().split("T")[0];
-
-  for (let i = 0; i < uniqueDates.length; i++) {
-    const expectedDate = new Date();
-    expectedDate.setDate(expectedDate.getDate() - i);
-    const expected = expectedDate.toISOString().split("T")[0];
-
-    if (uniqueDates[i] === expected) {
-      streak++;
-    } else if (i === 0 && uniqueDates[0] !== today) {
-      // Allow yesterday to count as start of streak
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      if (uniqueDates[0] === yesterday.toISOString().split("T")[0]) {
-        streak = 1;
-      } else {
-        break;
-      }
-    } else {
-      break;
-    }
-  }
 
   // This week stats
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
   const weekAgoIso = weekAgo.toISOString();
 
-  const thisWeekCompleted = completed.filter(
+  const thisWeekCompleted = (progress ?? []).filter(
     (r) => r.completed_at && r.completed_at > weekAgoIso
   );
 
   return Response.json({
     stats: {
-      total_tracks: (tracks ?? []).length,
-      total_lessons: totalLessons,
-      completed_lessons: completed.length,
-      completion_percentage:
-        totalLessons > 0 ? Math.round((completed.length / totalLessons) * 100) : 0,
-      total_time_seconds: totalTime,
-      streak_days: streak,
+      total_tracks: stats.totalTracks,
+      total_lessons: stats.totalLessons,
+      completed_lessons: stats.completedLessons,
+      completion_percentage: stats.completionPercentage,
+      total_time_seconds: stats.totalTimeSeconds,
+      streak_days: stats.streakDays,
+      due_review_count: stats.dueReviewCount,
+      mastery_average: stats.masteryAverage,
+      weak_skills: stats.weakSkills,
       lessons_this_week: thisWeekCompleted.length,
     },
   });

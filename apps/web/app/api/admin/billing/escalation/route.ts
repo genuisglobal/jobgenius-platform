@@ -7,7 +7,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { escalationId, decision, decisionNotes } = body as {
     escalationId: string;
     decision: "cleared" | "terminated";
@@ -50,10 +55,14 @@ export async function POST(request: Request) {
 
   // If terminated, deactivate seeker account
   if (decision === "terminated") {
-    await supabaseAdmin
+    const { error: terminateError } = await supabaseAdmin
       .from("job_seekers")
       .update({ status: "terminated" })
       .eq("id", escalation.job_seeker_id);
+
+    if (terminateError) {
+      return NextResponse.json({ error: "Failed to terminate seeker account." }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ ok: true, decision });

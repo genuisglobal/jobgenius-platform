@@ -3,10 +3,21 @@ import { getAccountManagerFromRequest } from "@/lib/am-access";
 import { requireOpsAuth } from "@/lib/ops-auth";
 import {
   computeMatchScore,
-  parseJobPost,
+  parseJobPostSmart,
   type JobSeekerProfile,
   type JobPost,
 } from "@/lib/matching";
+import {
+  recordMatchFeatures,
+  featuresFromBreakdown,
+  blendScore,
+  readBlendAlpha,
+  getActiveModel,
+} from "@/lib/learned-ranker";
+
+// Allow the unattended pipeline run to complete its sequential scoring writes.
+// (Effective on Vercel plans that permit longer functions; a no-op otherwise.)
+export const maxDuration = 300;
 
 type RunAllPayload = {
   job_seeker_ids?: string[];
@@ -97,7 +108,9 @@ export async function POST(request: Request) {
     });
   }
 
-  // Get active job posts
+  // Get active job posts. Capped well above the current Job Bank size (a
+  // few thousand) so a run can cover the whole bank in one pass, while
+  // still bounding memory/runtime if the bank grows much larger later.
   const { data: jobPosts, error: jobPostsError } = await supabaseServer
     .from("job_posts")
     .select(`
@@ -109,7 +122,7 @@ export async function POST(request: Request) {
     `)
     .eq("is_active", true)
     .order("created_at", { ascending: false })
-    .limit(500);
+    .limit(5000);
 
   if (jobPostsError || !jobPosts || jobPosts.length === 0) {
     return Response.json({
@@ -140,34 +153,50 @@ export async function POST(request: Request) {
   let totalParsed = 0;
   const errors: string[] = [];
 
-  // Parse jobs that need parsing
-  for (const post of jobPosts) {
-    if ((!post.parsed_at || payload.reparse_jobs) && post.description_text) {
-      try {
-        const parsed = parseJobPost(
-          post.title,
-          post.company,
-          post.location,
-          post.description_text
-        );
+  // Parse jobs that need parsing. Each parse is an LLM call, so at cap-sized
+  // volumes running them fully sequentially risks the function timeout on
+  // its own; a small concurrency window keeps wall-clock time down without
+  // hammering the LLM provider.
+  const PARSE_CONCURRENCY = 8;
+  const postsNeedingParse = jobPosts.filter(
+    (post) => (!post.parsed_at || payload.reparse_jobs) && post.description_text
+  );
 
-        await supabaseServer
-          .from("job_posts")
-          .update({
-            ...parsed,
-            parsed_at: new Date().toISOString(),
-          })
-          .eq("id", post.id);
+  for (let i = 0; i < postsNeedingParse.length; i += PARSE_CONCURRENCY) {
+    const batch = postsNeedingParse.slice(i, i + PARSE_CONCURRENCY);
+    await Promise.all(
+      batch.map(async (post) => {
+        try {
+          const parsed = await parseJobPostSmart(
+            post.title,
+            post.company,
+            post.location,
+            post.description_text
+          );
 
-        // Update in-memory data
-        Object.assign(post, parsed);
-        post.parsed_at = new Date().toISOString();
-        totalParsed++;
-      } catch (err) {
-        // Continue with unparsed data
-      }
-    }
+          await supabaseServer
+            .from("job_posts")
+            .update({
+              ...parsed,
+              parsed_at: new Date().toISOString(),
+            })
+            .eq("id", post.id);
+
+          // Update in-memory data
+          Object.assign(post, parsed);
+          post.parsed_at = new Date().toISOString();
+          totalParsed++;
+        } catch {
+          // Continue with unparsed data
+        }
+      })
+    );
   }
+
+  // Optionally blend the learned ranker into the heuristic. Fetched once
+  // up front; no-op when RANKER_BLEND_ALPHA is unset/0.
+  const blendAlpha = readBlendAlpha();
+  const activeModel = blendAlpha > 0 ? await getActiveModel() : null;
 
   // Score each seeker against each job
   for (const seekerData of seekers) {
@@ -206,6 +235,11 @@ export async function POST(request: Request) {
         }
       : undefined;
 
+    // Compute in-memory first, write in bulk after — at cap-sized volumes
+    // (thousands of jobs x multiple seekers) one upsert per pair risks the
+    // function timeout on round-trips alone; batching cuts DB calls by ~500x.
+    const scoreRows: Record<string, unknown>[] = [];
+
     for (const post of jobPosts) {
       // Skip if only_unscored and already scored
       if (payload.only_unscored && existingScoreKeys.has(`${seeker.id}:${post.id}`)) {
@@ -236,27 +270,68 @@ export async function POST(request: Request) {
         };
 
         const matchResult = computeMatchScore(seeker, job, weights);
+        const features = featuresFromBreakdown(matchResult.component_scores, weights);
+        const finalScore = activeModel
+          ? blendScore({
+              heuristic: matchResult.score,
+              features,
+              weights: activeModel.weights,
+              alpha: blendAlpha,
+            })
+          : matchResult.score;
 
-        await supabaseServer.from("job_match_scores").upsert(
-          {
-            job_post_id: post.id,
-            job_seeker_id: seeker.id,
-            score: matchResult.score,
-            confidence: matchResult.confidence,
-            recommendation: matchResult.recommendation,
-            reasons: {
-              ...matchResult.reasons,
-              component_scores: matchResult.component_scores,
-            },
-            updated_at: new Date().toISOString(),
+        scoreRows.push({
+          job_post_id: post.id,
+          job_seeker_id: seeker.id,
+          score: finalScore,
+          confidence: matchResult.confidence,
+          recommendation: matchResult.recommendation,
+          // A rescore always reflects current data — clear any prior
+          // soft-archive (see api/ops/clean-matches) so it's not hidden
+          // from the Job Hub despite being freshly computed.
+          archived_at: null,
+          archive_reason: null,
+          reasons: {
+            ...matchResult.reasons,
+            component_scores: matchResult.component_scores,
+            ...(activeModel
+              ? {
+                  learned: {
+                    model_id: activeModel.id,
+                    version: activeModel.version,
+                    alpha: blendAlpha,
+                    heuristic: matchResult.score,
+                  },
+                }
+              : {}),
           },
-          { onConflict: "job_post_id,job_seeker_id" }
-        );
+          updated_at: new Date().toISOString(),
+        });
+
+        void recordMatchFeatures({
+          jobSeekerId: seeker.id,
+          jobPostId: post.id,
+          heuristicScore: matchResult.score,
+          features,
+        });
 
         totalScored++;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         errors.push(`Error scoring seeker ${seeker.id} / job ${post.id}: ${message}`);
+      }
+    }
+
+    const UPSERT_CHUNK_SIZE = 500;
+    for (let i = 0; i < scoreRows.length; i += UPSERT_CHUNK_SIZE) {
+      const chunk = scoreRows.slice(i, i + UPSERT_CHUNK_SIZE);
+      const { error: upsertError } = await supabaseServer
+        .from("job_match_scores")
+        .upsert(chunk, { onConflict: "job_post_id,job_seeker_id" });
+      if (upsertError) {
+        errors.push(
+          `Error writing ${chunk.length} scores for seeker ${seeker.id}: ${upsertError.message}`
+        );
       }
     }
   }

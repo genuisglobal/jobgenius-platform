@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/auth";
+import { getIntakeStateByJobSeekerId } from "@/lib/intake";
 import BillingClient from "./BillingClient";
 
 export default async function BillingPage() {
@@ -11,14 +12,21 @@ export default async function BillingPage() {
   const seekerId = user.id;
 
   const [
+    seekerRes,
     contractRes,
     regPaymentRes,
     installmentsRes,
     offersRes,
     requestsRes,
     flexRequestRes,
+    intakeState,
   ] =
     await Promise.all([
+      supabaseAdmin
+        .from("job_seekers")
+        .select("full_name")
+        .eq("id", seekerId)
+        .maybeSingle(),
       supabaseAdmin
         .from("job_seeker_contracts")
         .select("*")
@@ -55,7 +63,23 @@ export default async function BillingPage() {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-    ]);
+    getIntakeStateByJobSeekerId(seekerId),
+  ]);
+
+  const billingAllowed = Boolean(
+    intakeState &&
+      [
+        "approved_payment_pending",
+        "approved_preview",
+        "preview_active",
+        "preview_expired",
+        "active_client",
+      ].includes(intakeState.status)
+  );
+
+  if (!billingAllowed && !contractRes.data) {
+    redirect("/portal");
+  }
 
   return (
     <BillingClient
@@ -65,7 +89,9 @@ export default async function BillingPage() {
       offers={offersRes.data ?? []}
       paymentRequests={requestsRes.data ?? []}
       flexRequest={flexRequestRes.data ?? null}
+      intakeState={intakeState}
       seekerId={seekerId}
+      seekerName={seekerRes.data?.full_name ?? null}
       userEmail={user.email}
     />
   );

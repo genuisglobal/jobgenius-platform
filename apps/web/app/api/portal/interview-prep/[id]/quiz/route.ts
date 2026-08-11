@@ -1,6 +1,7 @@
 import { requireJobSeeker } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/auth";
 import { generateQuizQuestions } from "@/lib/portal/ai-quiz-generator";
+import { submitAiOutput, markPublished } from "@/lib/ai-outputs";
 
 export async function GET(
   request: Request,
@@ -96,6 +97,17 @@ export async function POST(
 
   const title = `${quizType.charAt(0).toUpperCase() + quizType.slice(1)} Quiz — ${new Date().toLocaleDateString()}`;
 
+  // Shadow audit log; auto-approved to preserve current UX.
+  const audit = await submitAiOutput({
+    kind: "quiz_card",
+    payload: { questions, title, quizType, jobTitle, companyName, count: questions.length },
+    refType: "interview_prep",
+    refId: params.id,
+    seekerId: auth.user.id,
+    createdBy: auth.user.id,
+    autoApprove: true,
+  });
+
   const { data: quiz, error } = await supabaseAdmin
     .from("interview_quizzes")
     .insert({
@@ -113,6 +125,8 @@ export async function POST(
   if (error) {
     return Response.json({ error: "Failed to create quiz." }, { status: 500 });
   }
+
+  void markPublished(audit.id, { refType: "interview_quizzes", refId: quiz.id });
 
   return Response.json({ quiz }, { status: 201 });
 }

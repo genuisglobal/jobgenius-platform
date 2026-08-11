@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getCurrentUser, supabaseAdmin } from "@/lib/auth";
-import { isAdminRole } from "@/lib/auth/roles";
+import { isAdminRole, isPeopleManagerRole } from "@/lib/auth/roles";
+import { getClientDeliveryCaseBundleForSeeker } from "@/lib/client-delivery-server";
 import SeekerDetailClient from "./SeekerDetailClient";
 
 interface PageProps {
@@ -12,12 +13,15 @@ export default async function SeekerDetailPage({ params }: PageProps) {
   if (!user) return null;
 
   const { id } = params;
-  const isAdmin =
+  const isAdmin = user.userType === "am" && isAdminRole(user.role);
+  const canViewAnySeeker =
+    user.userType === "am" && isPeopleManagerRole(user.role);
+  const canReviewDeliveryCases =
     user.userType === "am" &&
-    isAdminRole(user.role);
+    (isPeopleManagerRole(user.role) || isAdminRole(user.role));
 
-  if (!isAdmin) {
-    // Verify assignment for non-admin AM users
+  if (!canViewAnySeeker) {
+    // Verify assignment for non-privileged AM users
     const { data: assignment } = await supabaseAdmin
       .from("job_seeker_assignments")
       .select("id")
@@ -160,6 +164,33 @@ export default async function SeekerDetailPage({ params }: PageProps) {
     .order("created_at", { ascending: false })
     .limit(50);
 
+  // Load the seeker's own saved application answers (portal "Saved Answers")
+  const { data: savedAnswers } = await supabaseAdmin
+    .from("job_seeker_answers")
+    .select("id, question_key, question_text, answer, updated_at")
+    .eq("job_seeker_id", id)
+    .order("question_key");
+
+  // Load screening answers
+  const { data: screeningAnswers } = await supabaseAdmin
+    .from("job_seeker_screening_answers")
+    .select("id, question_key, question_text, answer_value, answer_type, created_at, updated_at")
+    .eq("job_seeker_id", id)
+    .order("question_key");
+
+  // Load failure screenshots (most recent 50)
+  const runIds = (runs || []).map((r) => r.id);
+  let failureScreenshots: { id: string; run_id: string; step: string; reason: string; url: string; screenshot_path: string; created_at: string }[] = [];
+  if (runIds.length > 0) {
+    const { data: screenshots } = await supabaseAdmin
+      .from("apply_run_screenshots")
+      .select("id, run_id, step, reason, url, screenshot_path, created_at")
+      .in("run_id", runIds)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    failureScreenshots = (screenshots || []) as typeof failureScreenshots;
+  }
+
   const [
     contractsRes,
     registrationPaymentsRes,
@@ -225,11 +256,19 @@ export default async function SeekerDetailPage({ params }: PageProps) {
   });
 
   type FinancialProp = NonNullable<Parameters<typeof SeekerDetailClient>[0]["financial"]>;
+  const deliveryBundle =
+    user.userType === "am"
+      ? await getClientDeliveryCaseBundleForSeeker(
+          { accountManagerId: user.id, role: user.role },
+          id
+        )
+      : null;
 
   return (
     <SeekerDetailClient
-      backHref={isAdmin ? "/dashboard/admin/job-seekers" : "/dashboard/seekers"}
+      backHref={isAdmin ? "/dashboard/admin/job-seekers" : canViewAnySeeker ? "/dashboard/delivery" : "/dashboard/seekers"}
       seeker={seeker}
+      deliveryBundle={deliveryBundle}
       matchedJobs={matchedJobs as unknown as Parameters<typeof SeekerDetailClient>[0]["matchedJobs"]}
       queueItems={(queueItems || []) as unknown as Parameters<typeof SeekerDetailClient>[0]["queueItems"]}
       runs={(runs || []) as unknown as Parameters<typeof SeekerDetailClient>[0]["runs"]}
@@ -242,6 +281,10 @@ export default async function SeekerDetailPage({ params }: PageProps) {
       gmailConnection={gmailConnection ? { email: gmailConnection.gmail_email, connectedAt: gmailConnection.created_at } : null}
       inboundEmails={(inboundEmails || []) as unknown as Parameters<typeof SeekerDetailClient>[0]["inboundEmails"]}
       auditLogs={(auditLogs || []) as unknown as Parameters<typeof SeekerDetailClient>[0]["auditLogs"]}
+      screeningAnswers={(screeningAnswers || []) as unknown as Parameters<typeof SeekerDetailClient>[0]["screeningAnswers"]}
+      savedAnswers={(savedAnswers || []) as unknown as Parameters<typeof SeekerDetailClient>[0]["savedAnswers"]}
+      failureScreenshots={failureScreenshots as unknown as Parameters<typeof SeekerDetailClient>[0]["failureScreenshots"]}
+      canReviewDeliveryCases={canReviewDeliveryCases}
       financial={{
         contracts: (contractsRes.data || []) as unknown as FinancialProp["contracts"],
         registrationPayments: (registrationPaymentsRes.data || []) as unknown as FinancialProp["registrationPayments"],

@@ -17,7 +17,7 @@ export async function POST(
     .select(`
       *,
       job_seekers ( id, skills, seniority ),
-      job_posts ( id, title, company )
+      job_posts ( id, title, company, description_text )
     `)
     .eq("id", params.trackId)
     .eq("account_manager_id", amResult.accountManager.id)
@@ -38,7 +38,12 @@ export async function POST(
 
   // Get seeker and job details
   const jobSeeker = track.job_seekers as { id: string; skills: string[] | null; seniority: string | null } | null;
-  const jobPost = track.job_posts as { id: string; title: string; company: string | null } | null;
+  const jobPost = track.job_posts as {
+    id: string;
+    title: string;
+    company: string | null;
+    description_text: string | null;
+  } | null;
 
   // Get existing lesson count for sort order offset
   const { data: existingLessons } = await supabaseServer
@@ -56,8 +61,12 @@ export async function POST(
     trackTitle: track.title,
     category: track.category,
     lessonCount,
+    creationMode: track.creation_mode,
+    targetSkill: track.target_skill,
+    focusSkills: Array.isArray(track.focus_skills) ? (track.focus_skills as string[]) : null,
     jobTitle: jobPost?.title,
     company: jobPost?.company,
+    jobDescription: jobPost?.description_text,
     skills: jobSeeker?.skills,
     seniority: jobSeeker?.seniority,
   });
@@ -70,6 +79,9 @@ export async function POST(
     content: lesson.content,
     sort_order: sortOffset + i,
     estimated_minutes: lesson.estimated_minutes,
+    skill_slug: lesson.skill_slug,
+    learning_objective: lesson.learning_objective,
+    difficulty: lesson.difficulty,
     is_ai_generated: true,
   }));
 

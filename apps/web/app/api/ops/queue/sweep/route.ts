@@ -1,13 +1,15 @@
 import { requireOpsAuth } from "@/lib/ops-auth";
+import { enforceOpsRateLimit } from "@/lib/rate-limit-presets";
 import { supabaseServer } from "@/lib/supabase/server";
 import { enqueueBackgroundJob } from "@/lib/background-jobs";
 import {
   evaluateAutoApplyPreflight,
   loadSavedRunnerStorageState,
 } from "@/lib/auto-apply-preflight";
+import { applyHostGraduation } from "@/lib/host-graduation";
 
 const AUTO_APPLY_ALLOWED_ATS = new Set(
-  (process.env.AUTO_APPLY_ALLOWED_ATS ?? "LINKEDIN,GREENHOUSE,WORKDAY,GENERIC")
+  (process.env.AUTO_APPLY_ALLOWED_ATS ?? "LINKEDIN,GREENHOUSE,WORKDAY,LEVER,SMARTRECRUITERS,GENERIC")
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean)
@@ -23,6 +25,9 @@ const SWEEP_MIN_AGE_MINUTES = Math.max(
 );
 
 async function runSweep(request: Request) {
+  const rl = await enforceOpsRateLimit(request);
+  if (!rl.allowed) return rl.response;
+
   const auth = requireOpsAuth(request.headers);
   if (!auth.ok) {
     return Response.json({ success: false, error: auth.error }, { status: 401 });
@@ -132,7 +137,7 @@ async function runSweep(request: Request) {
 
   async function flagQueueAttention(queueId: string, reason: string, message: string) {
     const nowIso = new Date().toISOString();
-    await supabaseServer
+    const { error: queueFlagError } = await supabaseServer
       .from("application_queue")
       .update({
         status: "NEEDS_ATTENTION",
@@ -142,11 +147,19 @@ async function runSweep(request: Request) {
       })
       .eq("id", queueId);
 
-    await supabaseServer.from("attention_items").insert({
+    if (queueFlagError) {
+      console.error("[queue:sweep] failed to flag queue item:", queueFlagError);
+    }
+
+    const { error: attentionInsertError } = await supabaseServer.from("attention_items").insert({
       queue_id: queueId,
       status: "OPEN",
       reason,
     });
+
+    if (attentionInsertError) {
+      console.error("[queue:sweep] failed to insert attention item:", attentionInsertError);
+    }
   }
 
   let enqueued = 0;
@@ -165,7 +178,7 @@ async function runSweep(request: Request) {
       continue;
     }
 
-    const preflight = evaluateAutoApplyPreflight({
+    let preflight = evaluateAutoApplyPreflight({
       source: jp.source,
       url: jp.url,
       matchScore:
@@ -173,6 +186,9 @@ async function runSweep(request: Request) {
       storageState: await getStorageState(item.job_seeker_id),
       allowedAts: AUTO_APPLY_ALLOWED_ATS,
     });
+
+    // Mode 3 graduation (flag-gated; only relaxes HOST_UNSUPPORTED).
+    preflight = await applyHostGraduation(preflight);
 
     if (!preflight.eligible) {
       await flagQueueAttention(

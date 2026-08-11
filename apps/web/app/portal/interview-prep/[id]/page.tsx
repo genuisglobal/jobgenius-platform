@@ -4,8 +4,10 @@ import InterviewPrepDetail from "./InterviewPrepDetail";
 
 export default async function InterviewPrepDetailPage({
   params,
+  searchParams,
 }: {
   params: { id: string };
+  searchParams?: { tab?: string };
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -60,6 +62,7 @@ export default async function InterviewPrepDetailPage({
       videos={videos ?? []}
       sessions={sessions ?? []}
       interview={interview}
+      initialTab={typeof searchParams?.tab === "string" ? searchParams.tab : undefined}
     />
   );
 }

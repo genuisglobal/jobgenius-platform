@@ -93,13 +93,18 @@ export default function InterviewPrepDetail({
   videos,
   sessions: initialSessions,
   interview,
+  initialTab,
 }: {
   prep: Prep;
   videos: Video[];
   sessions: Session[];
   interview?: InterviewInfo | null;
+  initialTab?: string;
 }) {
-  const [activeTab, setActiveTab] = useState<string>("notes");
+  const defaultTab = SUB_TABS.some((tab) => tab.key === initialTab)
+    ? initialTab!
+    : "notes";
+  const [activeTab, setActiveTab] = useState<string>(defaultTab);
   const [sessions, setSessions] = useState<Session[]>(initialSessions);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [currentQ, setCurrentQ] = useState(0);
@@ -112,12 +117,19 @@ export default function InterviewPrepDetail({
   const jobPost = prep.job_posts;
 
   useEffect(() => {
+    if (initialTab && SUB_TABS.some((tab) => tab.key === initialTab)) {
+      setActiveTab(initialTab);
+      setActiveSession(null);
+    }
+  }, [initialTab]);
+
+  useEffect(() => {
     fetch("/api/portal/interview-prep/progress")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.progress) setProgress(data.progress);
       })
-      .catch(() => {});
+      .catch((err) => console.error("[interview-prep] fetch progress failed:", err));
   }, []);
 
   async function startNewPractice(sessionType: "qa" | "audio_simulation" = "qa") {
@@ -238,7 +250,7 @@ export default function InterviewPrepDetail({
       <div className="mb-6">
         <Link
           href="/portal/interview-prep"
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="text-sm text-violet-600 hover:text-violet-800"
         >
           &larr; Back to Interview Prep
         </Link>
@@ -342,7 +354,7 @@ export default function InterviewPrepDetail({
       {/* Study Notes Tab */}
       {activeTab === "notes" && (
         <div className="space-y-6">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
+          <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 text-sm text-violet-700">
             Study notes generated from the job description and your resume.
             Review these before your interview.
           </div>
@@ -514,7 +526,7 @@ export default function InterviewPrepDetail({
                 <button
                   onClick={() => startNewPractice("qa")}
                   disabled={creating}
-                  className="px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors w-full sm:w-auto"
+                  className="px-4 py-2.5 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors w-full sm:w-auto"
                 >
                   {creating ? "Creating..." : "Start New Practice"}
                 </button>
@@ -564,7 +576,7 @@ export default function InterviewPrepDetail({
                         </div>
                         <button
                           onClick={() => resumeSession(session)}
-                          className="px-3 py-2 text-sm bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 sm:py-1 self-start sm:self-auto"
+                          className="px-3 py-2 text-sm bg-violet-50 text-violet-700 rounded-md hover:bg-violet-100 sm:py-1 self-start sm:self-auto"
                         >
                           {session.status === "completed"
                             ? "Review"
@@ -587,7 +599,7 @@ export default function InterviewPrepDetail({
               <div className="flex items-center justify-between mb-4">
                 <button
                   onClick={() => setActiveSession(null)}
-                  className="text-sm text-blue-600 hover:text-blue-800"
+                  className="text-sm text-violet-600 hover:text-violet-800"
                 >
                   &larr; Back to sessions
                 </button>
@@ -599,7 +611,7 @@ export default function InterviewPrepDetail({
               {/* Progress bar */}
               <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
                 <div
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  className="bg-violet-600 h-2 rounded-full transition-all duration-300"
                   style={{
                     width: `${
                       (activeSession.questions.filter((q) => q.user_answer)
@@ -638,7 +650,7 @@ export default function InterviewPrepDetail({
                     onClick={() => setCurrentQ(i)}
                     className={`w-9 h-9 sm:w-8 sm:h-8 rounded-full text-xs font-medium ${
                       i === currentQ
-                        ? "bg-blue-600 text-white"
+                        ? "bg-violet-600 text-white"
                         : q.user_answer
                         ? q.score !== null && q.score >= 70
                           ? "bg-green-100 text-green-700"
@@ -662,7 +674,7 @@ export default function InterviewPrepDetail({
                 <button
                   onClick={() => startNewPractice("audio_simulation")}
                   disabled={creating}
-                  className="px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors w-full sm:w-auto"
+                  className="px-4 py-2.5 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors w-full sm:w-auto"
                 >
                   {creating ? "Creating..." : "Start Audio Practice"}
                 </button>
@@ -716,7 +728,7 @@ export default function InterviewPrepDetail({
                         </div>
                         <button
                           onClick={() => resumeSession(session)}
-                          className="px-3 py-2 text-sm bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 sm:py-1 self-start sm:self-auto"
+                          className="px-3 py-2 text-sm bg-violet-50 text-violet-700 rounded-md hover:bg-violet-100 sm:py-1 self-start sm:self-auto"
                         >
                           {session.status === "completed"
                             ? "Review"
@@ -807,7 +819,7 @@ function PracticeSessionView({
       <div className="flex items-center justify-between mb-4">
         <button
           onClick={onBack}
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="text-sm text-violet-600 hover:text-violet-800"
         >
           &larr; Back to sessions
         </button>
@@ -819,7 +831,7 @@ function PracticeSessionView({
       {/* Progress bar */}
       <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
         <div
-          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+          className="bg-violet-600 h-2 rounded-full transition-all duration-300"
           style={{
             width: `${(answeredCount / session.questions.length) * 100}%`,
           }}
@@ -868,8 +880,8 @@ function PracticeSessionView({
               </p>
             )}
             {question.confidence_coaching && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
-                <p className="text-sm text-blue-700">
+              <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 mb-2">
+                <p className="text-sm text-violet-700">
                   <span className="font-semibold">Confidence coaching:</span>{" "}
                   {question.confidence_coaching}
                 </p>
@@ -896,13 +908,13 @@ function PracticeSessionView({
               onChange={(e) => onAnswerChange(e.target.value)}
               rows={6}
               placeholder="Type your answer here... Use the STAR method (Situation, Task, Action, Result) for behavioral questions."
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
             />
             <div className="flex justify-end mt-3">
               <button
                 onClick={onSubmit}
                 disabled={submitting || !userAnswer.trim()}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors"
               >
                 {submitting
                   ? "Submitting..."
@@ -923,7 +935,7 @@ function PracticeSessionView({
             onClick={() => onNavigate(i)}
             className={`w-9 h-9 sm:w-8 sm:h-8 rounded-full text-xs font-medium ${
               i === currentQ
-                ? "bg-blue-600 text-white"
+                ? "bg-violet-600 text-white"
                 : q.user_answer
                 ? q.score !== null && q.score >= 70
                   ? "bg-green-100 text-green-700"

@@ -1,0 +1,119 @@
+{
+  "id": "jg-background-job-processor",
+  "name": "JG: Background Job Processor",
+  "nodes": [
+    {
+      "id": "trigger-schedule",
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http-background-run",
+      "name": "Process Background Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.JOBGENIUS_API_URL }}/api/background/run",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "limit", "value": "10" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-ops-key", "value": "={{ $env.JOBGENIUS_OPS_API_KEY }}" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "check-processed",
+      "name": "Jobs Processed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-processed",
+              "leftValue": "={{ $json.processed }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "log-processed",
+      "name": "Log Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 240],
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconsole.log('[JG Runner] Background jobs processed:', JSON.stringify({\n  processed: data.processed,\n  stale_runs: data.stale_runs,\n  results: (data.results ?? []).map(r => ({ id: r.id, status: r.status, error: r.error }))\n}));\nreturn $input.all();"
+      }
+    },
+    {
+      "id": "log-idle",
+      "name": "Idle (No Jobs)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [960, 380],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Every Minute": {
+      "main": [
+        [{ "node": "Process Background Jobs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Process Background Jobs": {
+      "main": [
+        [{ "node": "Jobs Processed?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Jobs Processed?": {
+      "main": [
+        [{ "node": "Log Results", "type": "main", "index": 0 }],
+        [{ "node": "Idle (No Jobs)", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

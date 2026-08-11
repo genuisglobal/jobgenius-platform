@@ -96,7 +96,7 @@ export default function ScreenshotUploadModal({
           <div
             onClick={() => fileInputRef.current?.click()}
             className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
-              file ? "border-green-400 bg-green-50" : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"
+              file ? "border-green-400 bg-green-50" : "border-gray-300 hover:border-violet-400 hover:bg-violet-50"
             }`}
           >
             <input
@@ -113,7 +113,7 @@ export default function ScreenshotUploadModal({
                 </svg>
                 <p className="text-sm font-medium text-gray-900">{file.name}</p>
                 <p className="text-xs text-gray-500 mt-1">{(file.size / 1024).toFixed(0)} KB</p>
-                <p className="text-xs text-blue-600 mt-2">Click to change file</p>
+                <p className="text-xs text-violet-600 mt-2">Click to change file</p>
               </div>
             ) : (
               <div>
@@ -148,7 +148,7 @@ export default function ScreenshotUploadModal({
           <button
             onClick={handleUpload}
             disabled={uploading || !file}
-            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {uploading ? "Uploading…" : "Upload Screenshot"}
           </button>
