@@ -7,7 +7,7 @@
 
 import { authenticateRequest, supabaseAdmin } from "@/lib/auth";
 import { supabaseServer } from "@/lib/supabase/server";
-import { isAdminRole } from "@/lib/auth/roles";
+import { isAdminRole, isPeopleManagerRole } from "@/lib/auth/roles";
 
 // Cookie names for new auth
 export type AccountManager = {
@@ -89,7 +89,7 @@ export async function hasJobSeekerAccess(
     .eq("id", accountManagerId)
     .maybeSingle();
 
-  if (isAdminRole(am?.role)) {
+  if (isAdminRole(am?.role) || isPeopleManagerRole(am?.role)) {
     return true;
   }
 
@@ -105,6 +105,52 @@ export async function hasJobSeekerAccess(
   }
 
   return true;
+}
+
+/**
+ * Convenience function that combines getAccountManagerFromRequest + hasJobSeekerAccess.
+ *
+ * Returns either `{ ok: true, amId, amEmail }` or `{ ok: false, response }` with a
+ * pre-built `Response.json` that the caller can return immediately.
+ */
+export async function requireAMAccessToSeeker(
+  headers: Headers,
+  jobSeekerId: string
+): Promise<
+  | { ok: true; amId: string; amEmail: string }
+  | { ok: false; response: Response }
+> {
+  const amResult = await getAccountManagerFromRequest(headers);
+  if ("error" in amResult) {
+    return {
+      ok: false,
+      response: Response.json(
+        { success: false, error: amResult.error },
+        { status: 401 }
+      ),
+    };
+  }
+
+  const allowed = await hasJobSeekerAccess(
+    amResult.accountManager.id,
+    jobSeekerId
+  );
+
+  if (!allowed) {
+    return {
+      ok: false,
+      response: Response.json(
+        { success: false, error: "Not authorized for this job seeker." },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return {
+    ok: true,
+    amId: amResult.accountManager.id,
+    amEmail: amResult.accountManager.email,
+  };
 }
 
 /**

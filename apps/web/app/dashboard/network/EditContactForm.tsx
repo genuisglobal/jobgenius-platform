@@ -107,7 +107,7 @@ export default function EditContactForm({
                   onClick={() => setContactType(type)}
                   className={`px-4 py-2 text-sm rounded-lg border transition ${
                     contactType === type
-                      ? "bg-blue-50 border-blue-300 text-blue-700 font-medium"
+                      ? "bg-violet-50 border-violet-300 text-violet-700 font-medium"
                       : "border-gray-300 text-gray-600 hover:bg-gray-50"
                   }`}
                 >
@@ -126,7 +126,7 @@ export default function EditContactForm({
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               placeholder="Jane Smith"
             />
           </div>
@@ -141,7 +141,7 @@ export default function EditContactForm({
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                 placeholder="jane@company.com"
               />
             </div>
@@ -153,7 +153,7 @@ export default function EditContactForm({
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                 placeholder="+1 555-0123"
               />
             </div>
@@ -168,7 +168,7 @@ export default function EditContactForm({
               type="url"
               value={linkedinUrl}
               onChange={(e) => setLinkedinUrl(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               placeholder="https://linkedin.com/in/janesmith"
             />
           </div>
@@ -183,7 +183,7 @@ export default function EditContactForm({
                 type="text"
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                 placeholder="Google"
               />
             </div>
@@ -195,7 +195,7 @@ export default function EditContactForm({
                 type="text"
                 value={jobTitle}
                 onChange={(e) => setJobTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                 placeholder="Senior Recruiter"
               />
             </div>
@@ -211,7 +211,7 @@ export default function EditContactForm({
               type="text"
               value={industriesText}
               onChange={(e) => setIndustriesText(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               placeholder="Software Engineering, Data Science"
             />
           </div>
@@ -226,7 +226,7 @@ export default function EditContactForm({
               onChange={(e) =>
                 setStatus(e.target.value as "active" | "inactive" | "do_not_contact")
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
             >
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
@@ -243,7 +243,7 @@ export default function EditContactForm({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
               placeholder="Any additional notes..."
             />
           </div>
@@ -261,7 +261,7 @@ export default function EditContactForm({
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
+              className="px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 disabled:opacity-50 transition"
             >
               {saving ? "Saving..." : "Save Changes"}
             </button>

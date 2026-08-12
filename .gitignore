@@ -143,3 +143,12 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vercel
 .env*.local
+apps/runner/.runner-*.err
+apps/runner/.runner-*.out
+apps/web/.tmp-match-test/
+nul
+[{]console.log(0)
+
+# Playwright (apps/extension browser tests)
+test-results/
+playwright-report/

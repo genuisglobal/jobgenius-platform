@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, supabaseAdmin } from "@/lib/auth";
+import { logAdminAction } from "@/lib/audit";
 
 /**
  * POST /api/admin/accounts/[id]/reject
@@ -52,6 +53,15 @@ export async function POST(
         { status: 500 }
       );
     }
+
+    logAdminAction({
+      adminId: auth.user.id,
+      adminEmail: auth.user.email,
+      action: "account.reject",
+      targetType: "account_manager",
+      targetId: id,
+      details: { email: updatedAm.email, name: updatedAm.name },
+    }).catch((e) => console.error("Audit log failed", e));
 
     return NextResponse.json({
       id: updatedAm.id,

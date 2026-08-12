@@ -83,7 +83,7 @@ export default function QuizTab({ prepId }: { prepId: string }) {
     fetch(`/api/portal/interview-prep/${prepId}/quiz`)
       .then((res) => res.json())
       .then((data) => setQuizzes(data.quizzes ?? []))
-      .catch(() => {})
+      .catch((err) => console.error("[interview-prep] fetch quizzes failed:", err))
       .finally(() => setLoading(false));
   }
 
@@ -201,7 +201,7 @@ export default function QuizTab({ prepId }: { prepId: string }) {
         <div className="flex items-center justify-between mb-4">
           <button
             onClick={() => setActiveQuiz(null)}
-            className="text-sm text-blue-600 hover:text-blue-800"
+            className="text-sm text-violet-600 hover:text-violet-800"
           >
             &larr; Back to quizzes
           </button>
@@ -213,7 +213,7 @@ export default function QuizTab({ prepId }: { prepId: string }) {
         {/* Progress bar */}
         <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
           <div
-            className="bg-blue-600 h-2 rounded-full transition-all"
+            className="bg-violet-600 h-2 rounded-full transition-all"
             style={{
               width: `${(answeredCount / activeQuiz.questions.length) * 100}%`,
             }}
@@ -240,7 +240,7 @@ export default function QuizTab({ prepId }: { prepId: string }) {
 
           <div className="space-y-2.5 sm:space-y-2">
             {question?.options.map((option, i) => {
-              let optionStyle = "border-gray-200 hover:border-blue-300";
+              let optionStyle = "border-gray-200 hover:border-violet-300";
               if (isAnswered) {
                 if (i === question.correct_index) {
                   optionStyle = "border-green-500 bg-green-50";
@@ -251,7 +251,7 @@ export default function QuizTab({ prepId }: { prepId: string }) {
                   optionStyle = "border-red-500 bg-red-50";
                 }
               } else if (selectedAnswer === i) {
-                optionStyle = "border-blue-500 bg-blue-50";
+                optionStyle = "border-violet-500 bg-violet-50";
               }
 
               return (
@@ -273,8 +273,8 @@ export default function QuizTab({ prepId }: { prepId: string }) {
           </div>
 
           {isAnswered && question?.explanation && (
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-700">
+            <div className="mt-4 p-3 bg-violet-50 rounded-lg">
+              <p className="text-sm text-violet-700">
                 <strong>Explanation:</strong> {question.explanation}
               </p>
             </div>
@@ -285,7 +285,7 @@ export default function QuizTab({ prepId }: { prepId: string }) {
               <button
                 onClick={submitAnswer}
                 disabled={submitting || selectedAnswer === null}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50"
               >
                 {submitting ? "Submitting..." : "Submit Answer"}
               </button>
@@ -304,7 +304,7 @@ export default function QuizTab({ prepId }: { prepId: string }) {
               }}
               className={`w-9 h-9 sm:w-8 sm:h-8 rounded-full text-xs font-medium ${
                 i === currentQ
-                  ? "bg-blue-600 text-white"
+                  ? "bg-violet-600 text-white"
                   : q.is_correct === true
                   ? "bg-green-100 text-green-700"
                   : q.is_correct === false
@@ -340,7 +340,7 @@ export default function QuizTab({ prepId }: { prepId: string }) {
           <button
             onClick={generateQuiz}
             disabled={generating}
-            className="px-4 py-2.5 sm:py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+            className="px-4 py-2.5 sm:py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 whitespace-nowrap"
           >
             {generating ? "Generating..." : "Generate Quiz"}
           </button>
@@ -389,7 +389,7 @@ export default function QuizTab({ prepId }: { prepId: string }) {
               </div>
               <button
                 onClick={() => loadQuiz(quiz.id)}
-                className="px-3 py-2 sm:py-1 text-sm bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 self-start sm:self-auto"
+                className="px-3 py-2 sm:py-1 text-sm bg-violet-50 text-violet-700 rounded-md hover:bg-violet-100 self-start sm:self-auto"
               >
                 {quiz.status === "completed" ? "Review" : quiz.status === "in_progress" ? "Continue" : "Start"}
               </button>

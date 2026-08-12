@@ -80,7 +80,10 @@ export default function JobPreferencesStep({
     update("skills", (profile.skills || []).filter((s) => s !== skill));
   };
 
+  const [error, setError] = useState<string | null>(null);
+
   const handleContinue = async () => {
+    setError(null);
     const ok = await saveFields({
       seniority: profile.seniority,
       target_titles: profile.target_titles,
@@ -89,6 +92,7 @@ export default function JobPreferencesStep({
       employment_type_preferences: profile.employment_type_preferences,
     });
     if (ok) onContinue();
+    else setError("Couldn't save your changes. Please check your connection and try again.");
   };
 
   return (
@@ -96,8 +100,8 @@ export default function JobPreferencesStep({
       <h2 className="text-xl font-semibold text-gray-900 mb-1">Job Preferences</h2>
       <p className="text-sm text-gray-600 mb-6">Help us find the right roles for you.</p>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-        <p className="text-sm text-blue-800">
+      <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 mb-6">
+        <p className="text-sm text-violet-800">
           Add 3-5 target job titles to maximize matches. Be specific &mdash; &quot;Senior Frontend Engineer&quot; works better than just &quot;Engineer&quot;.
         </p>
       </div>
@@ -109,7 +113,7 @@ export default function JobPreferencesStep({
           <select
             value={profile.seniority || ""}
             onChange={(e) => update("seniority", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-400 bg-white text-gray-900 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-400 bg-white text-gray-900 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
           >
             <option value="">Select...</option>
             {SENIORITY_OPTIONS.map((opt) => (
@@ -128,14 +132,14 @@ export default function JobPreferencesStep({
               onChange={(e) => setTitleInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTitle())}
               placeholder="Add a target title..."
-              className="flex-1 px-3 py-2 border border-gray-400 bg-white text-gray-900 placeholder-gray-500 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="flex-1 px-3 py-2 border border-gray-400 bg-white text-gray-900 placeholder-gray-500 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
             />
             <button onClick={addTitle} className="px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200">Add</button>
           </div>
           <div className="flex flex-wrap gap-2 mt-2">
             {(profile.target_titles || []).map((t) => (
-              <span key={t} className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-                {t}<button onClick={() => removeTitle(t)} className="hover:text-blue-600">&times;</button>
+              <span key={t} className="inline-flex items-center gap-1 px-3 py-1 bg-violet-100 text-violet-800 rounded-full text-sm">
+                {t}<button onClick={() => removeTitle(t)} className="hover:text-violet-600">&times;</button>
               </span>
             ))}
           </div>
@@ -151,7 +155,7 @@ export default function JobPreferencesStep({
               onChange={(e) => setSkillInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSkill())}
               placeholder="Add a skill..."
-              className="flex-1 px-3 py-2 border border-gray-400 bg-white text-gray-900 placeholder-gray-500 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="flex-1 px-3 py-2 border border-gray-400 bg-white text-gray-900 placeholder-gray-500 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
             />
             <button onClick={addSkill} className="px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200">Add</button>
           </div>
@@ -185,11 +189,15 @@ export default function JobPreferencesStep({
         </div>
       </div>
 
+      {error && (
+        <p className="mt-6 text-sm text-red-600" role="alert">{error}</p>
+      )}
+
       <div className="flex justify-between mt-8">
         <button onClick={onBack} className="px-6 py-2 text-sm font-medium text-gray-800 bg-gray-100 rounded-lg hover:bg-gray-200">
           Back
         </button>
-        <button onClick={handleContinue} disabled={saving} className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+        <button onClick={handleContinue} disabled={saving} className="px-6 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 disabled:opacity-50">
           {saving ? "Saving..." : "Continue"}
         </button>
       </div>

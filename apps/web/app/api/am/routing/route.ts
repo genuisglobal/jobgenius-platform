@@ -9,7 +9,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { job_seeker_id, job_post_id, decision, note } = body;
 
   if (!job_seeker_id || !job_post_id || !decision) {

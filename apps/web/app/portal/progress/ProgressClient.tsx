@@ -54,7 +54,7 @@ export default function ProgressClient() {
     fetch("/api/portal/progress")
       .then((res) => res.json())
       .then((d) => setData(d))
-      .catch(() => {})
+      .catch((err) => console.error("[progress] fetch progress failed:", err))
       .finally(() => setLoading(false));
   }, []);
 
@@ -107,7 +107,7 @@ export default function ProgressClient() {
         </div>
         <div className="w-full bg-gray-200 rounded-full h-3">
           <div
-            className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all"
+            className="bg-gradient-to-r from-violet-500 to-purple-500 h-3 rounded-full transition-all"
             style={{ width: `${Math.min(levelProgress, 100)}%` }}
           />
         </div>
@@ -115,7 +115,7 @@ export default function ProgressClient() {
           {LEVEL_THRESHOLDS.map((l) => (
             <span
               key={l.name}
-              className={data.xp_points >= l.min ? "text-blue-600 font-medium" : ""}
+              className={data.xp_points >= l.min ? "text-violet-600 font-medium" : ""}
             >
               {l.name}
             </span>
@@ -136,7 +136,7 @@ export default function ProgressClient() {
               <circle
                 cx="18" cy="18" r="15.915"
                 fill="none"
-                stroke={data.profile_completion === 100 ? "#22c55e" : "#3b82f6"}
+                stroke={data.profile_completion === 100 ? "#22c55e" : "#8b5cf6"}
                 strokeWidth="2.5"
                 strokeDasharray={`${data.profile_completion} ${100 - data.profile_completion}`}
                 strokeLinecap="round"

@@ -73,7 +73,8 @@ export default async function PipelinePage() {
   // Fetch seeker profiles (with compatibility fallback for optional columns).
   const seekers = await loadPipelineSeekers(seekerIds);
 
-  // Fetch match scores across all seekers
+  // Fetch match scores across all seekers (exclude archived/cleaned matches so
+  // the active Job Hub reflects the weekly cleaner + retention).
   const { data: matchScores } = await supabaseAdmin
     .from("job_match_scores")
     .select(`
@@ -81,6 +82,7 @@ export default async function PipelinePage() {
       job_posts (id, title, company, location, url, salary_min, salary_max, required_skills, preferred_skills, description_text)
     `)
     .in("job_seeker_id", seekerIds)
+    .is("archived_at", null)
     .order("score", { ascending: false })
     .limit(500);
 

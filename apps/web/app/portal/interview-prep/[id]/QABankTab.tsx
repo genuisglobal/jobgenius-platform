@@ -41,7 +41,7 @@ export default function QABankTab({ prepId }: { prepId: string }) {
     fetch(`/api/portal/interview-prep/${prepId}/qa-cards`)
       .then((res) => res.json())
       .then((data) => setCards(data.cards ?? []))
-      .catch(() => {})
+      .catch((err) => console.error("[interview-prep] fetch QA cards failed:", err))
       .finally(() => setLoading(false));
   }, [prepId]);
 
@@ -244,8 +244,8 @@ export default function QABankTab({ prepId }: { prepId: string }) {
 
                     {/* Tips */}
                     {card.tips && (
-                      <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                        <p className="text-sm text-blue-700">
+                      <div className="mb-4 p-3 bg-violet-50 rounded-lg">
+                        <p className="text-sm text-violet-700">
                           <strong>Tip:</strong> {card.tips}
                         </p>
                       </div>
@@ -276,13 +276,13 @@ export default function QABankTab({ prepId }: { prepId: string }) {
                           onChange={(e) => setUserAnswer(e.target.value)}
                           rows={4}
                           placeholder="Type your answer here..."
-                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
                         />
                         <div className="flex justify-end mt-2">
                           <button
                             onClick={() => submitResponse(card.id)}
                             disabled={submitting || !userAnswer.trim()}
-                            className="px-4 py-2.5 sm:py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 w-full sm:w-auto"
+                            className="px-4 py-2.5 sm:py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 w-full sm:w-auto"
                           >
                             {submitting ? "Submitting..." : "Submit Answer"}
                           </button>

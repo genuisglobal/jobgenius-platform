@@ -1,6 +1,7 @@
 import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
 import { supabaseServer } from "@/lib/supabase/server";
 import { generateQACards } from "@/lib/portal/ai-qa-generator";
+import { submitAiOutput, markPublished } from "@/lib/ai-outputs";
 
 export async function POST(
   request: Request,
@@ -99,6 +100,21 @@ export async function POST(
     is_ai_generated: true,
   }));
 
+  // Shadow log: record what the LLM produced before we persist downstream.
+  // autoApprove preserves current UX (QA cards still publish immediately);
+  // the ai_outputs row gives us an audit trail and lets a follow-up flip
+  // this kind to pending review without further refactoring.
+  const audit = await submitAiOutput({
+    kind: "qa_card",
+    payload: { cards, category, count, jobTitle, companyName },
+    refType: "interview_prep",
+    refId: params.id,
+    seekerId: prep.job_seeker_id,
+    amId: amResult.accountManager.id,
+    createdBy: amResult.accountManager.id,
+    autoApprove: true,
+  });
+
   const { data: inserted, error } = await supabaseServer
     .from("interview_qa_cards")
     .insert(inserts)
@@ -110,6 +126,9 @@ export async function POST(
       { status: 500 }
     );
   }
+
+  // Close the loop now that downstream rows exist.
+  void markPublished(audit.id, { refType: "interview_prep", refId: params.id });
 
   return Response.json({ success: true, cards: inserted ?? [] }, { status: 201 });
 }

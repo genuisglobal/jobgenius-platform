@@ -7,9 +7,14 @@ export default async function InterviewsPage() {
 
   const { data: interviews } = await supabaseAdmin
     .from("interviews")
-    .select("*")
+    .select(`
+      *,
+      job_posts (
+        id, title, company
+      )
+    `)
     .eq("job_seeker_id", user.id)
-    .order("scheduled_at", { ascending: true });
+    .order("scheduled_at", { ascending: true, nullsFirst: false });
 
   const interviewIds = (interviews || []).map((i: { id: string }) => i.id);
   let prep: Record<string, unknown>[] = [];

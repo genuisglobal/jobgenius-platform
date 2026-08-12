@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireJobSeeker, supabaseAdmin } from "@/lib/auth";
+import { applyAvailableReferralCredits } from "@/lib/referrals";
+import {
+  getIntakeStateByJobSeekerId,
+  upsertJobSeekerIntakeState,
+} from "@/lib/intake";
 
 const DEFAULT_MAX_INSTALLMENTS = 3;
 const DEFAULT_WINDOW_DAYS = 31;
@@ -104,10 +109,11 @@ export async function POST(request: Request) {
     payment_deadline: maxDate.toISOString(),
     work_started: false,
   };
+  const intakeState = await getIntakeStateByJobSeekerId(auth.user.id);
 
   const { data: existingPayment, error: existingPaymentError } = await supabaseAdmin
     .from("registration_payments")
-    .select("id, amount_paid, work_started")
+    .select("id, amount_paid, credit_applied_amount, work_started")
     .eq("job_seeker_id", auth.user.id)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -119,13 +125,19 @@ export async function POST(request: Request) {
   }
 
   const existingAmountPaid = Number(existingPayment?.amount_paid ?? 0);
+  const existingCreditAppliedAmount = Number(
+    existingPayment?.credit_applied_amount ?? 0
+  );
   const preservedAmountPaid = Number.isFinite(existingAmountPaid)
     ? existingAmountPaid
     : 0;
+  const preservedCreditAppliedAmount = Number.isFinite(existingCreditAppliedAmount)
+    ? existingCreditAppliedAmount
+    : 0;
   const nextStatus =
-    preservedAmountPaid >= Number(contract.registration_fee)
+    preservedAmountPaid + preservedCreditAppliedAmount >= Number(contract.registration_fee)
       ? "complete"
-      : preservedAmountPaid > 0
+      : preservedAmountPaid + preservedCreditAppliedAmount > 0
       ? "partial"
       : "pending";
 
@@ -135,7 +147,11 @@ export async function POST(request: Request) {
         .update({
           ...paymentPayload,
           amount_paid: preservedAmountPaid,
-          work_started: Boolean(existingPayment.work_started),
+          credit_applied_amount: preservedCreditAppliedAmount,
+          intake_state_id: intakeState?.id ?? null,
+          work_started:
+            preservedAmountPaid + preservedCreditAppliedAmount > 0 ||
+            Boolean(existingPayment.work_started),
           status: nextStatus,
         })
         .eq("id", existingPayment.id)
@@ -143,7 +159,10 @@ export async function POST(request: Request) {
         .single()
     : supabaseAdmin
         .from("registration_payments")
-        .insert(paymentPayload)
+        .insert({
+          ...paymentPayload,
+          intake_state_id: intakeState?.id ?? null,
+        })
         .select()
         .single();
 
@@ -154,11 +173,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to create payment record." }, { status: 500 });
   }
 
+  await applyAvailableReferralCredits(auth.user.id);
+
   // Delete old installments and re-insert
-  await supabaseAdmin
+  const { error: deleteInstError } = await supabaseAdmin
     .from("payment_installments")
     .delete()
     .eq("registration_payment_id", regPayment.id);
+
+  if (deleteInstError) {
+    console.error("[portal:billing] failed to delete old installments:", deleteInstError);
+  }
 
   const installmentRows = installments.map((inst, i) => ({
     registration_payment_id: regPayment.id,
@@ -176,6 +201,22 @@ export async function POST(request: Request) {
 
   if (instError) {
     return NextResponse.json({ error: "Failed to save installment plan." }, { status: 500 });
+  }
+
+  if (
+    intakeState &&
+    intakeState.offer_path === "strategy_preview" &&
+    ["approved_preview", "preview_active", "preview_expired"].includes(
+      intakeState.status
+    )
+  ) {
+    await upsertJobSeekerIntakeState({
+      jobSeekerId: auth.user.id,
+      status: "approved_payment_pending",
+      metadata: {
+        preview_payment_plan_created_at: new Date().toISOString(),
+      },
+    });
   }
 
   return NextResponse.json({ ok: true, registrationPaymentId: regPayment.id, installments: savedInstallments }, { status: 201 });

@@ -64,6 +64,39 @@
     return response.json();
   }
 
+  async function getJson(url, authToken) {
+    const response = await fetch(url, {
+      headers: {
+        "x-runner": "extension",
+        Authorization: authToken ? `Bearer ${authToken}` : "",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status}).`);
+    }
+    return response.json();
+  }
+
+  // Fetch the server's remediation suggestions for the (ATS, error) that caused
+  // a pause and surface them in the sidebar, so the AM gets actionable next
+  // steps instead of a bare reason code. Best-effort — never throws.
+  async function surfaceSuggestions(ctx, reason) {
+    if (!ctx?.apiBaseUrl || !ctx?.authToken || !ctx?.atsType || !reason) return;
+    try {
+      const params = new URLSearchParams({ ats: ctx.atsType, error_code: reason });
+      const data = await getJson(
+        `${ctx.apiBaseUrl}/api/apply/suggestions?${params.toString()}`,
+        ctx.authToken
+      );
+      const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : [];
+      for (const suggestion of suggestions.slice(0, 3)) {
+        if (suggestion) sidebarLog(`Suggestion: ${suggestion}`, "info");
+      }
+    } catch (error) {
+      console.warn("Fetch apply suggestions failed:", error);
+    }
+  }
+
   async function logEvent(ctx, payload) {
     return postJson(
       `${ctx.apiBaseUrl}/api/apply/event`,
@@ -72,8 +105,71 @@
     );
   }
 
+  // Capture the current tab via the background worker (content scripts can't
+  // call captureVisibleTab) and upload it to /api/apply/screenshot, where it
+  // lands in apply_run_screenshots and shows up in the AM run timeline.
+  // Called with reason "SUBMIT_PROOF" on completion and with the pause reason
+  // on pauses. Strictly best-effort: never throws, never blocks the run
+  // outcome — a missing screenshot must not turn a submitted application
+  // into a failure.
+  async function captureProofScreenshot(ctx, step, reason) {
+    if (!ctx?.apiBaseUrl || !ctx?.runId) return false;
+    try {
+      const capture = await new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage(
+            { type: "CAPTURE_PROOF_SCREENSHOT" },
+            (response) => {
+              // Reading lastError keeps Chrome from logging an unchecked error.
+              if (chrome.runtime.lastError) resolve(null);
+              else resolve(response);
+            }
+          );
+        } catch {
+          resolve(null);
+        }
+      });
+
+      if (!capture?.success || !capture.dataUrl) {
+        if (capture?.reason) {
+          sidebarLog(`Screenshot skipped (${capture.reason}).`, "info");
+        }
+        return false;
+      }
+
+      const blob = dom.dataUrlToBlob?.(capture.dataUrl);
+      if (!blob) return false;
+
+      const form = new FormData();
+      form.append("file", blob, "proof.png");
+      form.append("run_id", ctx.runId);
+      form.append("step", step ?? ctx.currentStep ?? "");
+      form.append("reason", reason ?? "SUBMIT_PROOF");
+      form.append("url", window.location.href);
+
+      const response = await fetch(`${ctx.apiBaseUrl}/api/apply/screenshot`, {
+        method: "POST",
+        headers: {
+          "x-runner": "extension",
+          Authorization: ctx.authToken ? `Bearer ${ctx.authToken}` : "",
+        },
+        body: form,
+      });
+      if (response.ok) {
+        sidebarLog("Captured page screenshot for the run timeline.", "success");
+      }
+      return response.ok;
+    } catch (error) {
+      console.warn("Proof screenshot failed:", error);
+      return false;
+    }
+  }
+
   async function pauseRun(ctx, reason, meta) {
-    return postJson(
+    // Photograph the page in its stuck state BEFORE reporting the pause, so
+    // the AM triages from a screenshot instead of reconstructing from logs.
+    await captureProofScreenshot(ctx, meta?.step ?? ctx.currentStep, reason);
+    const result = await postJson(
       `${ctx.apiBaseUrl}/api/apply/pause`,
       {
         run_id: ctx.runId,
@@ -86,9 +182,15 @@
       },
       ctx.authToken
     );
+    // Surface server remediation suggestions for this pause reason (best-effort).
+    await surfaceSuggestions(ctx, reason);
+    return result;
   }
 
   async function completeRun(ctx, note) {
+    // Capture the confirmation page as submission proof while it's still
+    // showing (the tab may navigate away after the run finishes).
+    await captureProofScreenshot(ctx, ctx.currentStep, "SUBMIT_PROOF");
     return postJson(
       `${ctx.apiBaseUrl}/api/apply/complete`,
       {
@@ -202,9 +304,13 @@
       }
 
       otpInput.focus();
-      otpInput.value = otp.code;
-      otpInput.dispatchEvent(new Event("input", { bubbles: true }));
-      otpInput.dispatchEvent(new Event("change", { bubbles: true }));
+      if (dom.setValueOnElement) {
+        dom.setValueOnElement(otpInput, otp.code);
+      } else {
+        otpInput.value = otp.code;
+        otpInput.dispatchEvent(new Event("input", { bubbles: true }));
+        otpInput.dispatchEvent(new Event("change", { bubbles: true }));
+      }
       await markOtpUsed(ctx, otp.id);
       setSidebarAction("Filled email OTP");
       sidebarLog("Filled email OTP automatically.", "success");
@@ -213,10 +319,47 @@
     return true;
   }
 
+  // Login wall = the board's session died. Tell the background immediately
+  // (badge + popup banner for the seeker, without waiting for the hourly
+  // cookie check). The run itself pauses with SESSION_EXPIRED — which is in
+  // AUTO_RESUME_REASONS, so it picks back up once the seeker logs in.
+  function notifySessionExpired() {
+    setSidebarStatus("Session expired");
+    sidebarLog("Login wall detected — the board session has expired.", "warn");
+    try {
+      chrome.runtime.sendMessage({
+        type: "SESSION_EXPIRED_DETECTED",
+        host: window.location.hostname,
+      });
+    } catch {
+      /* background unavailable — the hourly check will still catch it */
+    }
+  }
+
+  async function pauseForSessionExpired(ctx, step) {
+    notifySessionExpired();
+    await pauseRun(ctx, "SESSION_EXPIRED", {
+      step,
+      ats: ctx.atsType,
+      message: "Login required — the board session has expired.",
+    });
+  }
+
   async function handleMissingFields(ctx, adapter, stepName) {
-    const missingFields = adapter.extractRequiredFields
+    let missingFields = adapter.extractRequiredFields
       ? adapter.extractRequiredFields()
       : dom.extractRequiredFields();
+
+    if (missingFields.length > 0) {
+      // Resolve via the server's shared fill brain before pausing for a human.
+      const classifiedCount = await dom.classifyAndFill?.(ctx, missingFields);
+      if (classifiedCount > 0) {
+        await dom.sleep(400);
+        missingFields = adapter.extractRequiredFields
+          ? adapter.extractRequiredFields()
+          : dom.extractRequiredFields();
+      }
+    }
 
     if (missingFields.length > 0) {
       sidebarReportMissing(missingFields);
@@ -291,6 +434,17 @@
         return { status: "APPLIED" };
       }
 
+      // A step click can land on a login wall mid-flow (session timed out
+      // while applying) — stop cleanly instead of grinding to NO_PROGRESS.
+      if (dom.hasLoginWall?.()) {
+        notifySessionExpired();
+        return {
+          status: "NEEDS_ATTENTION",
+          reason: "SESSION_EXPIRED",
+          meta: { attempt, message: "Login required — the board session has expired." },
+        };
+      }
+
       if (dom.hasCaptcha()) {
         setSidebarStatus("Waiting for CAPTCHA solve");
         sidebarLog("CAPTCHA detected. Waiting for your action.", "warn");
@@ -326,9 +480,19 @@
         sidebarReportFill(fillSummary);
       }
 
-      const missingFields = adapter.extractRequiredFields
+      let missingFields = adapter.extractRequiredFields
         ? adapter.extractRequiredFields()
         : dom.extractRequiredFields();
+
+      if (missingFields.length > 0) {
+        const classifiedCount = await dom.classifyAndFill?.(ctx, missingFields);
+        if (classifiedCount > 0) {
+          await dom.sleep(400);
+          missingFields = adapter.extractRequiredFields
+            ? adapter.extractRequiredFields()
+            : dom.extractRequiredFields();
+        }
+      }
 
       if (missingFields.length > 0) {
         sidebarReportMissing(missingFields);
@@ -366,7 +530,12 @@
       }
       sidebarReportClick(submitResult?.clickedLabel || "Continue");
 
-      await dom.sleep(1300);
+      // Short nudge, then wait for the DOM to actually settle (waitForDomStable
+      // caps at 8s / 800ms idle) rather than betting on a fixed 1.3s guess that
+      // is too short for slow ATS pages and wasteful for fast ones.
+      await dom.sleep(300);
+      if (dom.waitForDomStable) await dom.waitForDomStable();
+      dom.dismissOverlays?.();
       const afterFingerprint =
         dom.captureFlowFingerprint?.() ?? window.location.href;
       const progressed = beforeFingerprint !== afterFingerprint;
@@ -418,12 +587,25 @@
     setSidebarStatus("Running");
     ctx.currentStep = "INIT";
     ctx.buttonHints = Array.isArray(ctx.buttonHints) ? ctx.buttonHints : [];
+
+    // Dismiss overlays and wait for DOM to stabilize before starting
+    dom.dismissOverlays?.();
+    if (dom.waitForDomStable) await dom.waitForDomStable();
+
     await logEvent(ctx, {
       run_id: ctx.runId,
       event_type: "RUNNER_STARTED",
       message: `Runner started on ${ctx.atsType}.`,
       last_seen_url: window.location.href,
     });
+
+    // A dead session shows a login wall instead of the job page — detect it
+    // up front so the run pauses as SESSION_EXPIRED, not UNKNOWN_ATS.
+    if (dom.hasLoginWall?.()) {
+      await pauseForSessionExpired(ctx, "DETECT_ATS");
+      sidebar?.finish?.("Needs Attention", "Board session expired — log in to resume.");
+      return;
+    }
 
     if (!adapter || !adapter.detect || !adapter.detect()) {
       await pauseRun(ctx, "UNKNOWN_ATS", {
@@ -514,6 +696,9 @@
           }
           setSidebarAction("Clicked Apply");
           sidebarLog("Clicked Apply entry.");
+          // Let the application form/modal render before the next step reads it.
+          dom.dismissOverlays?.();
+          if (dom.waitForDomStable) await dom.waitForDomStable();
         }
         continue;
       }
@@ -574,6 +759,9 @@
             return;
           }
           sidebarReportClick(result?.clickedLabel || "Continue");
+          // Wait for the post-submit page/validation to settle before CONFIRM.
+          dom.dismissOverlays?.();
+          if (dom.waitForDomStable) await dom.waitForDomStable();
         }
         continue;
       }
@@ -638,5 +826,6 @@
     retryRun,
     pauseRun,
     completeRun,
+    logEvent,
   };
 })();

@@ -108,7 +108,7 @@ export default function SlotsClient({ slots, accountManagerId }: Props) {
             disabled={creating || !date}
             style={{
               padding: "8px 16px",
-              background: "#2563eb",
+              background: "#7c3aed",
               color: "#fff",
               border: "none",
               borderRadius: 6,

@@ -9,6 +9,7 @@ type CreatePlaybookPayload = {
   assistant_goal?: string | null;
   guardrails?: string | null;
   pathway_id?: string | null;
+  retell_agent_id?: string | null;
   escalation_rules?: Record<string, unknown>;
   max_retry_attempts?: number;
   retry_backoff_minutes?: number;
@@ -22,6 +23,7 @@ type UpdatePlaybookPayload = {
   assistant_goal?: string | null;
   guardrails?: string | null;
   pathway_id?: string | null;
+  retell_agent_id?: string | null;
   escalation_rules?: Record<string, unknown>;
   max_retry_attempts?: number;
   retry_backoff_minutes?: number;
@@ -109,6 +111,7 @@ export async function POST(request: Request) {
       assistant_goal: toOptionalText(payload.assistant_goal),
       guardrails: toOptionalText(payload.guardrails),
       pathway_id: toOptionalText(payload.pathway_id),
+      retell_agent_id: toOptionalText(payload.retell_agent_id),
       escalation_rules:
         payload.escalation_rules && typeof payload.escalation_rules === "object"
           ? payload.escalation_rules
@@ -165,6 +168,8 @@ export async function PATCH(request: Request) {
   if (payload.assistant_goal !== undefined) updates.assistant_goal = toOptionalText(payload.assistant_goal);
   if (payload.guardrails !== undefined) updates.guardrails = toOptionalText(payload.guardrails);
   if (payload.pathway_id !== undefined) updates.pathway_id = toOptionalText(payload.pathway_id);
+  if (payload.retell_agent_id !== undefined)
+    updates.retell_agent_id = toOptionalText(payload.retell_agent_id);
   if (payload.is_active !== undefined) updates.is_active = Boolean(payload.is_active);
   if (payload.escalation_rules !== undefined) {
     if (!payload.escalation_rules || typeof payload.escalation_rules !== "object") {

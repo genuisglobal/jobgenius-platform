@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import DeliveryCommandPanel from "./DeliveryCommandPanel";
 import {
   formatTaskStatusLabel,
   getTaskAttachmentFromAttachments,
@@ -11,6 +12,9 @@ import {
   buildJobGeniusReportMessage,
   type JobGeniusReport,
 } from "@/lib/jobgenius/report";
+import { RESUME_TEMPLATES, type ResumeTemplateId } from "@/lib/resume-templates/types";
+import { PRICING_PLANS } from "@/app/components/homepage/marketingContent";
+import type { ClientDeliveryCaseBundle } from "@/lib/client-delivery";
 import { buildMatchExplanation } from "@/lib/matching/explanations";
 
 interface ScoringWeights {
@@ -58,6 +62,12 @@ interface SeekerData {
   id: string;
   full_name: string | null;
   email: string;
+  collaboration_agreement_requested_at?: string | null;
+  collaboration_agreement_signed_at?: string | null;
+  campaign_tier?: "essentials" | "premium" | null;
+  setup_fee_usd?: number | null;
+  setup_fee_paid_at?: string | null;
+  resume_template_id?: ResumeTemplateId | null;
   phone: string | null;
   location: string | null;
   seniority: string | null;
@@ -104,6 +114,30 @@ interface SeekerData {
   willing_to_work_weekends: boolean | null;
   preferred_shift: string | null;
   open_to_contract: boolean | null;
+  minimum_salary: number | null;
+  // EEO (voluntary self-identification)
+  eeo_gender: string | null;
+  eeo_race: string | null;
+  eeo_veteran_status: string | null;
+  eeo_disability_status: string | null;
+  // Background & legal
+  felony_conviction: boolean | null;
+  non_compete_subject: boolean | null;
+  consent_background_check: boolean | null;
+  consent_drug_screening: boolean | null;
+  // Assets & timeline
+  resume_url: string | null;
+  profile_photo_url: string | null;
+  onboarding_completed_at: string | null;
+  created_at: string | null;
+}
+
+interface SavedAnswer {
+  id: string;
+  question_key: string;
+  question_text: string;
+  answer: string;
+  updated_at: string | null;
 }
 
 interface MatchedJob {
@@ -368,6 +402,26 @@ interface SeekerConversationMessage {
   attachments?: unknown;
 }
 
+interface ScreeningAnswer {
+  id: string;
+  question_key: string;
+  question_text: string;
+  answer_value: string;
+  answer_type: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface FailureScreenshot {
+  id: string;
+  run_id: string;
+  step: string;
+  reason: string;
+  url: string;
+  screenshot_path: string;
+  created_at: string;
+}
+
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "profile", label: "Profile" },
@@ -375,6 +429,11 @@ const TABS = [
   { id: "financial", label: "Financial" },
   { id: "jobs", label: "Jobs" },
   { id: "applications", label: "Applications" },
+  { id: "screening", label: "Screening" },
+  { id: "facts", label: "Facts" },
+  { id: "debug", label: "Debug" },
+  { id: "activity", label: "Activity" },
+  { id: "feedback", label: "Feedback" },
   { id: "messages", label: "Messages" },
   { id: "outreach", label: "Outreach" },
   { id: "interviews", label: "Interviews" },
@@ -394,10 +453,15 @@ export default function SeekerDetailClient({
   interviewPrep,
   references,
   documents,
+  deliveryBundle,
   gmailConnection,
   inboundEmails,
   auditLogs = [],
   financial = EMPTY_FINANCIAL_DATA,
+  screeningAnswers: initialScreeningAnswers = [],
+  savedAnswers = [],
+  failureScreenshots = [],
+  canReviewDeliveryCases = false,
 }: {
   backHref?: string;
   seeker: SeekerData;
@@ -410,10 +474,15 @@ export default function SeekerDetailClient({
   interviewPrep: InterviewPrep[];
   references: Reference[];
   documents: Document[];
+  deliveryBundle?: ClientDeliveryCaseBundle | null;
   gmailConnection: GmailConnectionInfo | null;
   inboundEmails: InboundEmail[];
   auditLogs?: ProfileAuditLog[];
   financial?: FinancialData;
+  screeningAnswers?: ScreeningAnswer[];
+  savedAnswers?: SavedAnswer[];
+  failureScreenshots?: FailureScreenshot[];
+  canReviewDeliveryCases?: boolean;
 }) {
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -429,7 +498,7 @@ export default function SeekerDetailClient({
           <div className="flex-1">
             <Link
               href={backHref}
-              className="text-sm text-blue-600 hover:text-blue-800 mb-2 inline-block"
+              className="text-sm text-violet-600 hover:text-violet-800 mb-2 inline-block"
             >
               {"<-"} Back to Job Seekers
             </Link>
@@ -444,7 +513,7 @@ export default function SeekerDetailClient({
                 </span>
               )}
               {seeker.seniority && (
-                <span className="px-2 py-1 bg-blue-100 text-blue-700 text-sm rounded capitalize">
+                <span className="px-2 py-1 bg-violet-100 text-violet-700 text-sm rounded capitalize">
                   {seeker.seniority}
                 </span>
               )}
@@ -486,6 +555,20 @@ export default function SeekerDetailClient({
         </div>
       </div>
 
+      <DeliveryCommandPanel
+        seekerId={seeker.id}
+        seekerName={seeker.full_name || "Unnamed Seeker"}
+        deliveryBundle={
+          deliveryBundle ?? {
+            snapshot: null,
+            caseRecord: null,
+            blockers: [],
+            escalations: [],
+          }
+        }
+        canReviewCases={canReviewDeliveryCases}
+      />
+
       {/* Tabs */}
       <div className="bg-white rounded-lg shadow">
         <div className="border-b overflow-x-auto">
@@ -496,7 +579,7 @@ export default function SeekerDetailClient({
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-6 py-4 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
                   activeTab === tab.id
-                    ? "border-blue-600 text-blue-600"
+                    ? "border-violet-600 text-violet-600"
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
@@ -507,7 +590,7 @@ export default function SeekerDetailClient({
                   </span>
                 )}
                 {tab.id === "inbox" && inboundEmails.length > 0 && (
-                  <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full">
+                  <span className="ml-2 px-2 py-0.5 bg-violet-100 text-violet-800 text-xs rounded-full">
                     {inboundEmails.length}
                   </span>
                 )}
@@ -525,7 +608,11 @@ export default function SeekerDetailClient({
             />
           )}
           {(activeTab === "profile" || activeTab === "reports") && (
-            <ProfileTab seeker={seeker} auditLogs={auditLogs} />
+            <ProfileTab
+              seeker={seeker}
+              auditLogs={auditLogs}
+              savedAnswers={savedAnswers}
+            />
           )}
           {activeTab === "financial" && (
             <FinancialTab financial={financial} />
@@ -540,6 +627,21 @@ export default function SeekerDetailClient({
           )}
           {activeTab === "applications" && (
             <ApplicationsTab queueItems={queueItems} runs={runs} />
+          )}
+          {activeTab === "screening" && (
+            <ScreeningAnswersTab seekerId={seeker.id} initialAnswers={initialScreeningAnswers} />
+          )}
+          {activeTab === "facts" && (
+            <ClientFactsTab seekerId={seeker.id} />
+          )}
+          {activeTab === "debug" && (
+            <DebugScreenshotsTab screenshots={failureScreenshots} runs={runs} />
+          )}
+          {activeTab === "activity" && (
+            <ActivityFeedTab seekerId={seeker.id} />
+          )}
+          {activeTab === "feedback" && (
+            <FeedbackTab seekerId={seeker.id} />
           )}
           {activeTab === "messages" && (
             <MessagesTab seekerId={seeker.id} />
@@ -572,7 +674,7 @@ function StatBox({
   color?: "blue" | "green" | "orange" | "purple";
 }) {
   const colorClasses: Record<string, string> = {
-    blue: "text-blue-600",
+    blue: "text-violet-600",
     green: "text-green-600",
     orange: "text-orange-600",
     purple: "text-purple-600",
@@ -587,15 +689,436 @@ function StatBox({
   );
 }
 
+function EditableChips({
+  items,
+  onUpdate,
+  color,
+  placeholder,
+}: {
+  items: string[];
+  onUpdate: (items: string[]) => void;
+  color: "blue" | "green";
+  placeholder: string;
+}) {
+  const [input, setInput] = useState("");
+
+  const colorStyles = {
+    blue: "bg-violet-100 text-violet-800",
+    green: "bg-green-100 text-green-800",
+  };
+
+  const addItem = () => {
+    const value = input.trim();
+    if (value && !items.includes(value)) {
+      onUpdate([...items, value]);
+    }
+    setInput("");
+  };
+
+  const removeItem = (item: string) => {
+    onUpdate(items.filter((i) => i !== item));
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => (
+          <span
+            key={item}
+            className={`inline-flex items-center gap-1 px-3 py-1 ${colorStyles[color]} text-sm rounded-full`}
+          >
+            {item}
+            <button
+              type="button"
+              onClick={() => removeItem(item)}
+              className="ml-0.5 hover:opacity-70 font-bold text-xs"
+              title={`Remove "${item}"`}
+            >
+              &times;
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addItem();
+            }
+          }}
+          placeholder={placeholder}
+          className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+        />
+        <button
+          type="button"
+          onClick={addItem}
+          disabled={!input.trim()}
+          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg disabled:opacity-40"
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResumeTemplateCard({ seeker }: { seeker: SeekerData }) {
+  const [templateId, setTemplateId] = useState<ResumeTemplateId>(
+    seeker.resume_template_id ?? "classic"
+  );
+  const [saving, setSaving] = useState<ResumeTemplateId | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  // Render the client's base resume in the selected template for a live preview.
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    fetch("/api/am/resume-template/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_seeker_id: seeker.id, template_id: templateId }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Preview unavailable.");
+        }
+        const blob = await res.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setPreviewUrl(objectUrl);
+      })
+      .catch((e) => {
+        if (!cancelled) setPreviewError(e instanceof Error ? e.message : "Preview unavailable.");
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [templateId, seeker.id]);
+
+  const choose = async (next: ResumeTemplateId) => {
+    if (next === templateId) return;
+    setError(null);
+    setSaving(next);
+    const prev = templateId;
+    setTemplateId(next);
+    try {
+      const res = await fetch("/api/am/resume-template", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_seeker_id: seeker.id, template_id: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setTemplateId(prev);
+        setError(data.error || "Failed to update template.");
+      }
+    } catch {
+      setTemplateId(prev);
+      setError("Failed to update template.");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <Section title="Resume Template">
+      <p className="mb-3 text-xs text-gray-500">
+        Every resume JobGenius tailors for this client uses this template. Change it anytime.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        {RESUME_TEMPLATES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => choose(t.id)}
+            disabled={saving !== null}
+            className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:opacity-60 ${
+              templateId === t.id
+                ? "border-violet-500 bg-violet-50 text-violet-700 font-medium"
+                : "border-gray-200 text-gray-600 hover:border-gray-300"
+            }`}
+          >
+            <span className="flex items-center justify-between">
+              <span className="font-medium">{t.name}</span>
+              {saving === t.id ? (
+                <span className="text-[10px] text-gray-400">Saving…</span>
+              ) : templateId === t.id ? (
+                <span className="text-[10px] text-violet-500">Selected</span>
+              ) : null}
+            </span>
+            <span className="mt-0.5 block text-xs text-gray-400">{t.description}</span>
+          </button>
+        ))}
+      </div>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+
+      <div className="mt-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-500">Preview</span>
+          {previewLoading && <span className="text-[10px] text-gray-400">Rendering…</span>}
+        </div>
+        {previewError ? (
+          <p className="mt-1 text-xs text-amber-600">{previewError}</p>
+        ) : (
+          <iframe
+            title="Resume template preview"
+            src={previewUrl ? `${previewUrl}#toolbar=0&navpanes=0&view=FitH` : undefined}
+            className="mt-1 h-80 w-full rounded-lg border border-gray-200 bg-gray-50"
+          />
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function CampaignTierCard({
+  seeker,
+  tier,
+  onTierChange,
+}: {
+  seeker: SeekerData;
+  tier: "essentials" | "premium" | null;
+  onTierChange: (tier: "essentials" | "premium", setupFeeUsd: number) => void;
+}) {
+  const [setupFeeUsd, setSetupFeeUsd] = useState<number | null>(seeker.setup_fee_usd ?? null);
+  const [paidAt, setPaidAt] = useState<string | null>(seeker.setup_fee_paid_at ?? null);
+  const [saving, setSaving] = useState<"tier" | "paid" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const selectTier = async (value: "essentials" | "premium") => {
+    setError(null);
+    setSaving("tier");
+    try {
+      const res = await fetch("/api/am/campaign-tier", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_seeker_id: seeker.id, tier: value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setError(data.error || "Failed to set the campaign tier.");
+        return;
+      }
+      setSetupFeeUsd(data.setup_fee_usd);
+      setPaidAt(null);
+      onTierChange(data.campaign_tier, data.setup_fee_usd);
+    } catch {
+      setError("Failed to set the campaign tier.");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const markPaid = async () => {
+    setError(null);
+    setSaving("paid");
+    try {
+      const res = await fetch("/api/am/campaign-tier", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_seeker_id: seeker.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setError(data.error || "Failed to mark the setup fee as paid.");
+        return;
+      }
+      setPaidAt(data.setup_fee_paid_at);
+    } catch {
+      setError("Failed to mark the setup fee as paid.");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <Section title="Campaign Plan & Setup Fee">
+      <div className="flex gap-2">
+        {PRICING_PLANS.map((plan) => {
+          const value = plan.name.toLowerCase() as "essentials" | "premium";
+          const isActive = tier === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => selectTier(value)}
+              disabled={saving === "tier"}
+              className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:opacity-50 ${
+                isActive
+                  ? "border-violet-400 bg-violet-50 text-violet-800"
+                  : "border-gray-200 text-gray-600 hover:border-gray-300"
+              }`}
+            >
+              <span className="font-medium">{plan.name}</span>
+              <span className="block text-xs text-gray-400">
+                ${plan.setupFeeUsd.toLocaleString()} setup fee
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {tier && (
+        <div className="mt-3 flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
+          <div className="text-sm text-gray-600">
+            Setup fee:{" "}
+            <span className="font-medium text-gray-900">${setupFeeUsd?.toLocaleString()}</span>
+            {paidAt ? (
+              <span className="ml-2 text-xs text-green-600">
+                Paid {new Date(paidAt).toLocaleDateString()}
+              </span>
+            ) : (
+              <span className="ml-2 text-xs text-amber-600">Not yet paid</span>
+            )}
+          </div>
+          {!paidAt && (
+            <button
+              type="button"
+              onClick={markPaid}
+              disabled={saving === "paid"}
+              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg disabled:opacity-50"
+            >
+              {saving === "paid" ? "Saving…" : "Mark fee as paid"}
+            </button>
+          )}
+        </div>
+      )}
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+    </Section>
+  );
+}
+
+function AgreementPushCard({ seeker }: { seeker: SeekerData }) {
+  const [requestedAt, setRequestedAt] = useState<string | null>(
+    seeker.collaboration_agreement_requested_at ?? null
+  );
+  const [tier, setTier] = useState<"essentials" | "premium" | null>(seeker.campaign_tier ?? null);
+  const signedAt = seeker.collaboration_agreement_signed_at ?? null;
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const send = async () => {
+    setError(null);
+    setSending(true);
+    try {
+      const res = await fetch("/api/am/agreement/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_seeker_id: seeker.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setError(data.error || "Failed to send the agreement.");
+        return;
+      }
+      setRequestedAt(data.requested_at);
+    } catch {
+      setError("Failed to send the agreement.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <CampaignTierCard seeker={seeker} tier={tier} onTierChange={(t) => setTier(t)} />
+
+      <Section title="Service Agreement">
+        {signedAt ? (
+          <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+            Signed by client on {new Date(signedAt).toLocaleDateString()}.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-gray-600">
+              {!tier
+                ? "Select a campaign plan above before sending the agreement."
+                : requestedAt
+                  ? `Sent ${new Date(requestedAt).toLocaleDateString()} — awaiting the client's signature.`
+                  : "The client can preview the agreement in their portal, but can only sign once you send it."}
+            </p>
+            <button
+              type="button"
+              onClick={send}
+              disabled={sending || !tier}
+              className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg disabled:opacity-50"
+            >
+              {sending ? "Sending…" : requestedAt ? "Resend agreement" : "Send agreement to client"}
+            </button>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
 function OverviewTab({
   seeker,
   references,
   documents,
+  onSeekerUpdate,
 }: {
   seeker: SeekerData;
   references: Reference[];
   documents: Document[];
+  onSeekerUpdate?: (fields: Partial<SeekerData>) => void;
 }) {
+  const [targetTitles, setTargetTitles] = useState<string[]>(seeker.target_titles ?? []);
+  const [skills, setSkills] = useState<string[]>(seeker.skills ?? []);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [saveMsg, setSaveMsg] = useState<{ field: string; type: "success" | "error"; text: string } | null>(null);
+
+  const saveField = async (field: "target_titles" | "skills", value: string[]) => {
+    setSaving(field);
+    setSaveMsg(null);
+    try {
+      const res = await fetch(`/api/am/seekers/${seeker.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: value }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setSaveMsg({ field, type: "error", text: data.error || "Failed to save." });
+        return;
+      }
+      setSaveMsg({ field, type: "success", text: "Saved!" });
+      if (onSeekerUpdate) onSeekerUpdate({ [field]: value });
+      setTimeout(() => setSaveMsg((prev) => (prev?.field === field ? null : prev)), 2000);
+    } catch {
+      setSaveMsg({ field, type: "error", text: "Network error." });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const updateTargetTitles = (newTitles: string[]) => {
+    setTargetTitles(newTitles);
+    saveField("target_titles", newTitles);
+  };
+
+  const updateSkills = (newSkills: string[]) => {
+    setSkills(newSkills);
+    saveField("skills", newSkills);
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Profile Info */}
@@ -609,32 +1132,26 @@ function OverviewTab({
           </dl>
         </Section>
 
-        <Section title="Target Titles">
-          {seeker.target_titles && seeker.target_titles.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {seeker.target_titles.map((t) => (
-                <span key={t} className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
-                  {t}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500 text-sm">No target titles set</p>
-          )}
+        <ResumeTemplateCard seeker={seeker} />
+
+        <AgreementPushCard seeker={seeker} />
+
+        <Section title={<span className="flex items-center gap-2">Target Titles {saving === "target_titles" && <span className="text-xs text-gray-400">Saving...</span>}{saveMsg?.field === "target_titles" && <span className={`text-xs ${saveMsg.type === "success" ? "text-green-600" : "text-red-600"}`}>{saveMsg.text}</span>}</span>}>
+          <EditableChips
+            items={targetTitles}
+            onUpdate={updateTargetTitles}
+            color="blue"
+            placeholder="Add a target title... (e.g. Database Administrator)"
+          />
         </Section>
 
-        <Section title="Skills">
-          {seeker.skills && seeker.skills.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {seeker.skills.map((s) => (
-                <span key={s} className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
-                  {s}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500 text-sm">No skills listed</p>
-          )}
+        <Section title={<span className="flex items-center gap-2">Skills {saving === "skills" && <span className="text-xs text-gray-400">Saving...</span>}{saveMsg?.field === "skills" && <span className={`text-xs ${saveMsg.type === "success" ? "text-green-600" : "text-red-600"}`}>{saveMsg.text}</span>}</span>}>
+          <EditableChips
+            items={skills}
+            onUpdate={updateSkills}
+            color="green"
+            placeholder="Add a skill..."
+          />
         </Section>
       </div>
 
@@ -653,7 +1170,7 @@ function OverviewTab({
                     href={doc.file_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-blue-600 hover:text-blue-800"
+                    className="text-sm text-violet-600 hover:text-violet-800"
                   >
                     View
                   </a>
@@ -693,9 +1210,11 @@ function OverviewTab({
 function ProfileTab({
   seeker,
   auditLogs,
+  savedAnswers = [],
 }: {
   seeker: SeekerData;
   auditLogs: ProfileAuditLog[];
+  savedAnswers?: SavedAnswer[];
 }) {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysis, setAnalysis] = useState<{ analysis: string; rating: string } | null>(null);
@@ -1109,7 +1628,7 @@ function ProfileTab({
       <div className="bg-gray-50 rounded-lg p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-gray-900">Profile Completion</h3>
-          <span className="text-lg font-bold text-blue-600">{completion}%</span>
+          <span className="text-lg font-bold text-violet-600">{completion}%</span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-3">
           <div
@@ -1127,7 +1646,7 @@ function ProfileTab({
             <button
               onClick={sendAnalysisToSeeker}
               disabled={analysisSending || !analysis}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50"
             >
               {analysisSending ? "Sending..." : "Send To Seeker"}
             </button>
@@ -1188,7 +1707,7 @@ function ProfileTab({
             <button
               onClick={sendJobGeniusReportToSeeker}
               disabled={reportSending || !jobGeniusReport}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50"
             >
               {reportSending ? "Sending..." : "Send To Seeker"}
             </button>
@@ -1394,7 +1913,7 @@ function ProfileTab({
           <button
             onClick={saveProfileChanges}
             disabled={editorSaving}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50"
           >
             {editorSaving ? "Saving..." : "Save Changes"}
           </button>
@@ -1591,6 +2110,20 @@ function ProfileTab({
               </p>
             </div>
           )}
+          <div className="mt-3 pt-3 border-t">
+            <dl className="space-y-2">
+              <InfoRow label="Resume on file" value={seeker.resume_url} link />
+              <InfoRow label="Signed Up" value={dateLabel(seeker.created_at)} />
+              <InfoRow
+                label="Onboarding Completed"
+                value={
+                  seeker.onboarding_completed_at
+                    ? dateLabel(seeker.onboarding_completed_at)
+                    : "Not completed"
+                }
+              />
+            </dl>
+          </div>
         </Section>
 
         {/* Bio */}
@@ -1610,6 +2143,14 @@ function ProfileTab({
                 ? `$${(seeker.salary_min ?? 0).toLocaleString()} – $${(seeker.salary_max ?? 0).toLocaleString()}`
                 : "—"
             } />
+            <InfoRow
+              label="Minimum Salary"
+              value={
+                seeker.minimum_salary != null
+                  ? `$${seeker.minimum_salary.toLocaleString()}`
+                  : "—"
+              }
+            />
             <InfoRow label="Open to Relocation" value={boolLabel(seeker.open_to_relocation)} />
           </dl>
           {seeker.target_titles && seeker.target_titles.length > 0 && (
@@ -1617,7 +2158,7 @@ function ProfileTab({
               <p className="text-xs font-medium text-gray-500 mb-1">Target Titles</p>
               <div className="flex flex-wrap gap-1.5">
                 {seeker.target_titles.map((t) => (
-                  <span key={t} className="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full">{t}</span>
+                  <span key={t} className="px-2 py-0.5 bg-violet-100 text-violet-800 text-xs rounded-full">{t}</span>
                 ))}
               </div>
             </div>
@@ -1650,6 +2191,16 @@ function ProfileTab({
                   <p key={i} className="text-sm text-gray-700">
                     <span className="font-medium capitalize">{lp.work_type}:</span> {lp.locations.join(", ")}
                   </p>
+                ))}
+              </div>
+            </div>
+          )}
+          {seeker.preferred_locations && seeker.preferred_locations.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-medium text-gray-500 mb-1">Preferred Locations</p>
+              <div className="flex flex-wrap gap-1.5">
+                {seeker.preferred_locations.map((loc) => (
+                  <span key={loc} className="px-2 py-0.5 bg-sky-100 text-sky-800 text-xs rounded-full">{loc}</span>
                 ))}
               </div>
             </div>
@@ -1743,6 +2294,7 @@ function ProfileTab({
           <dl className="space-y-2">
             <InfoRow label="Authorized to Work" value={boolLabel(seeker.authorized_to_work)} />
             <InfoRow label="Requires Visa Sponsorship" value={boolLabel(seeker.requires_visa_sponsorship)} />
+            <InfoRow label="Visa Status" value={seeker.visa_status || "—"} />
             <InfoRow label="Citizenship Status" value={seeker.citizenship_status || "—"} />
             <InfoRow label="Requires H1B Transfer" value={boolLabel(seeker.requires_h1b_transfer)} />
             <InfoRow label="Needs Employer Sponsorship" value={boolLabel(seeker.needs_employer_sponsorship)} />
@@ -1762,6 +2314,59 @@ function ProfileTab({
             <InfoRow label="Open to Contract" value={boolLabel(seeker.open_to_contract)} />
           </dl>
         </Section>
+
+        {/* Background & Legal */}
+        <Section title="Background & Legal">
+          <dl className="space-y-2">
+            <InfoRow label="Felony Conviction" value={boolLabel(seeker.felony_conviction)} />
+            <InfoRow label="Subject to Non-Compete" value={boolLabel(seeker.non_compete_subject)} />
+            <InfoRow label="Consents to Background Check" value={boolLabel(seeker.consent_background_check)} />
+            <InfoRow label="Consents to Drug Screening" value={boolLabel(seeker.consent_drug_screening)} />
+          </dl>
+        </Section>
+
+        {/* EEO — voluntary self-identification */}
+        <Section title="EEO / Voluntary Self-Identification">
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-3">
+            Voluntary disclosures used only to auto-fill employer EEO forms. Do not
+            use these answers when deciding which roles to submit this seeker to.
+          </p>
+          <dl className="space-y-2">
+            <InfoRow label="Gender" value={seeker.eeo_gender || "Not disclosed"} />
+            <InfoRow label="Race / Ethnicity" value={seeker.eeo_race || "Not disclosed"} />
+            <InfoRow label="Veteran Status" value={seeker.eeo_veteran_status || "Not disclosed"} />
+            <InfoRow label="Disability Status" value={seeker.eeo_disability_status || "Not disclosed"} />
+          </dl>
+        </Section>
+
+        {/* Saved application answers the seeker wrote in their portal */}
+        <div className="lg:col-span-2">
+          <Section title={`Saved Application Answers (${savedAnswers.length})`}>
+            {savedAnswers.length > 0 ? (
+              <div className="space-y-3">
+                {savedAnswers.map((answer) => (
+                  <div key={answer.id} className="p-3 bg-white rounded-lg border">
+                    <p className="text-sm font-medium text-gray-900">
+                      {answer.question_text}
+                    </p>
+                    <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">
+                      {answer.answer.trim() || "— not answered —"}
+                    </p>
+                    {answer.updated_at && (
+                      <p className="text-xs text-gray-400 mt-2">
+                        Updated {dateLabel(answer.updated_at)}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">
+                Seeker has not saved any application answers yet.
+              </p>
+            )}
+          </Section>
+        </div>
       </div>
     </div>
   );
@@ -1913,7 +2518,7 @@ function FinancialTab({ financial }: { financial: FinancialData }) {
                     href={screenshot.file_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-blue-600 hover:text-blue-800"
+                    className="text-sm text-violet-600 hover:text-violet-800"
                   >
                     View
                   </a>
@@ -2178,7 +2783,7 @@ function JobsTab({
           <button
             onClick={runMatchNow}
             disabled={runningMatch}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50"
           >
             {runningMatch ? "Running..." : "Run Match Now"}
           </button>
@@ -2208,7 +2813,7 @@ function JobsTab({
               <button
                 onClick={saveWeights}
                 disabled={savingWeights}
-                className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                className="px-3 py-1 text-xs bg-violet-600 text-white rounded hover:bg-violet-700 disabled:opacity-50"
               >
                 {savingWeights ? "Saving..." : "Save Weights"}
               </button>
@@ -2251,7 +2856,7 @@ function JobsTab({
             <div className="flex h-4 rounded-full overflow-hidden bg-gray-100">
               {totalWeight > 0 && (
                 <>
-                  <div style={{ width: `${(weights.skills / totalWeight) * 100}%` }} className="bg-blue-500" title={`Skills: ${weights.skills}`} />
+                  <div style={{ width: `${(weights.skills / totalWeight) * 100}%` }} className="bg-violet-500" title={`Skills: ${weights.skills}`} />
                   <div style={{ width: `${(weights.title / totalWeight) * 100}%` }} className="bg-indigo-500" title={`Title: ${weights.title}`} />
                   <div style={{ width: `${(weights.experience / totalWeight) * 100}%` }} className="bg-green-500" title={`Experience: ${weights.experience}`} />
                   <div style={{ width: `${(weights.salary / totalWeight) * 100}%` }} className="bg-emerald-500" title={`Salary: ${weights.salary}`} />
@@ -2261,7 +2866,7 @@ function JobsTab({
               )}
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-              <span className="flex items-center gap-1 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />Skills</span>
+              <span className="flex items-center gap-1 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-violet-500 inline-block" />Skills</span>
               <span className="flex items-center gap-1 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" />Title</span>
               <span className="flex items-center gap-1 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />Experience</span>
               <span className="flex items-center gap-1 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />Salary</span>
@@ -2284,7 +2889,7 @@ function JobsTab({
           <button
             onClick={() => setFilter("above")}
             className={`px-3 py-1 text-sm rounded-lg ${
-              filter === "above" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
+              filter === "above" ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-700"
             }`}
           >
             Above Threshold ({matchedJobs.filter((m) => m.score >= currentThreshold).length})
@@ -2292,7 +2897,7 @@ function JobsTab({
           <button
             onClick={() => setFilter("below")}
             className={`px-3 py-1 text-sm rounded-lg ${
-              filter === "below" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
+              filter === "below" ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-700"
             }`}
           >
             Below Threshold
@@ -2300,7 +2905,7 @@ function JobsTab({
           <button
             onClick={() => setFilter("all")}
             className={`px-3 py-1 text-sm rounded-lg ${
-              filter === "all" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
+              filter === "all" ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-700"
             }`}
           >
             All ({matchedJobs.length})
@@ -2329,7 +2934,7 @@ function JobsTab({
                       href={m.job.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-blue-600 hover:text-blue-800 mt-1 inline-block"
+                      className="text-sm text-violet-600 hover:text-violet-800 mt-1 inline-block"
                     >
                       View Posting →
                     </a>
@@ -2734,7 +3339,7 @@ function MessagesTab({ seekerId }: { seekerId: string }) {
                 resetTaskFields();
                 setFeedback(null);
               }}
-              className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="px-2 py-1 text-xs bg-violet-600 text-white rounded hover:bg-violet-700"
             >
               New
             </button>
@@ -2757,7 +3362,7 @@ function MessagesTab({ seekerId }: { seekerId: string }) {
                   }}
                   className={`w-full text-left p-3 transition-colors ${
                     selectedConversationId === conversation.id
-                      ? "bg-blue-50"
+                      ? "bg-violet-50"
                       : "hover:bg-gray-50"
                   }`}
                 >
@@ -2778,7 +3383,7 @@ function MessagesTab({ seekerId }: { seekerId: string }) {
                           ? "bg-purple-100 text-purple-700"
                           : conversation.conversation_type === "task"
                           ? "bg-amber-100 text-amber-700"
-                          : "bg-blue-100 text-blue-700"
+                          : "bg-violet-100 text-violet-700"
                       }`}
                     >
                       {conversation.conversation_type === "application_question"
@@ -2832,7 +3437,7 @@ function MessagesTab({ seekerId }: { seekerId: string }) {
                   resetTaskFields();
                   setFeedback(null);
                 }}
-                className="text-xs text-blue-600 hover:text-blue-800"
+                className="text-xs text-violet-600 hover:text-violet-800"
               >
                 Start new thread
               </button>
@@ -2863,7 +3468,7 @@ function MessagesTab({ seekerId }: { seekerId: string }) {
                       className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
                         isSeeker
                           ? "bg-white border border-gray-200 text-gray-900"
-                          : "bg-blue-600 text-white"
+                          : "bg-violet-600 text-white"
                       }`}
                     >
                       <div className="flex items-center gap-2 text-xs mb-1 opacity-80">
@@ -2881,7 +3486,7 @@ function MessagesTab({ seekerId }: { seekerId: string }) {
                           className={`mt-2 rounded border p-2 text-xs ${
                             isSeeker
                               ? "border-amber-200 bg-amber-50 text-amber-900"
-                              : "border-blue-300 bg-blue-500 text-blue-50"
+                              : "border-violet-300 bg-violet-500 text-violet-50"
                           }`}
                         >
                           <p className="font-semibold">{task.title}</p>
@@ -2914,7 +3519,7 @@ function MessagesTab({ seekerId }: { seekerId: string }) {
                   value={subject}
                   onChange={(event) => setSubject(event.target.value)}
                   placeholder="e.g. Week 1 goals and updates"
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
                 />
               </div>
             )}
@@ -3020,7 +3625,7 @@ function MessagesTab({ seekerId }: { seekerId: string }) {
               <button
                 type="submit"
                 disabled={sending}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded hover:bg-violet-700 disabled:opacity-50"
               >
                 {sending
                   ? "Sending..."
@@ -3055,7 +3660,7 @@ function OutreachTab({
         <button
           onClick={() => setView("drafts")}
           className={`px-4 py-2 text-sm rounded-lg ${
-            view === "drafts" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
+            view === "drafts" ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-700"
           }`}
         >
           Drafts ({drafts.length})
@@ -3063,7 +3668,7 @@ function OutreachTab({
         <button
           onClick={() => setView("threads")}
           className={`px-4 py-2 text-sm rounded-lg ${
-            view === "threads" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
+            view === "threads" ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-700"
           }`}
         >
           Recruiter Threads ({threads.length})
@@ -3280,7 +3885,7 @@ function InterviewCard({
           </p>
           <span className={`inline-block mt-2 px-2 py-0.5 text-xs rounded-full ${
             interview.status === "confirmed" ? "bg-green-100 text-green-800" :
-            interview.status === "completed" ? "bg-blue-100 text-blue-800" :
+            interview.status === "completed" ? "bg-violet-100 text-violet-800" :
             interview.status === "cancelled" ? "bg-red-100 text-red-800" :
             "bg-gray-100 text-gray-600"
           }`}>
@@ -3295,7 +3900,7 @@ function InterviewCard({
             href={interview.meeting_link}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-blue-600 hover:text-blue-800"
+            className="text-sm text-violet-600 hover:text-violet-800"
           >
             Join Meeting →
           </a>
@@ -3326,7 +3931,7 @@ function InterviewCard({
               <select
                 value={outcomeForm.outcome}
                 onChange={(e) => setOutcomeForm((f) => ({ ...f, outcome: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               >
                 {Object.entries(OUTCOME_LABELS).map(([val, { label }]) => (
                   <option key={val} value={val}>{label}</option>
@@ -3342,7 +3947,7 @@ function InterviewCard({
                   value={outcomeForm.offer_amount}
                   onChange={(e) => setOutcomeForm((f) => ({ ...f, offer_amount: e.target.value }))}
                   placeholder="e.g. 55000"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                 />
               </div>
             )}
@@ -3354,7 +3959,7 @@ function InterviewCard({
                   type="date"
                   value={outcomeForm.hire_date}
                   onChange={(e) => setOutcomeForm((f) => ({ ...f, hire_date: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                 />
               </div>
             )}
@@ -3367,7 +3972,7 @@ function InterviewCard({
                   value={outcomeForm.rejection_reason}
                   onChange={(e) => setOutcomeForm((f) => ({ ...f, rejection_reason: e.target.value }))}
                   placeholder="e.g. Overqualified, salary mismatch..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                 />
               </div>
             )}
@@ -3379,7 +3984,7 @@ function InterviewCard({
                 onChange={(e) => setOutcomeForm((f) => ({ ...f, outcome_notes: e.target.value }))}
                 rows={3}
                 placeholder="Internal notes about this outcome..."
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
               />
             </div>
 
@@ -3393,7 +3998,7 @@ function InterviewCard({
               <button
                 onClick={submitOutcome}
                 disabled={savingOutcome}
-                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg"
+                className="flex-1 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg"
               >
                 {savingOutcome ? "Saving…" : "Save Outcome"}
               </button>
@@ -3418,7 +4023,7 @@ function PrepTab({
         <h3 className="font-semibold text-gray-900">Interview Prep Materials</h3>
         <Link
           href={`/dashboard/interview-prep?seeker=${seekerId}`}
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="text-sm text-violet-600 hover:text-violet-800"
         >
           Generate New →
         </Link>
@@ -3455,7 +4060,7 @@ const CLASSIFICATION_LABELS: Record<string, { label: string; color: string }> = 
   rejection: { label: "Rejection", color: "bg-red-100 text-red-800" },
   interview_invite: { label: "Interview Invite", color: "bg-green-100 text-green-800" },
   offer: { label: "Offer", color: "bg-emerald-100 text-emerald-800" },
-  follow_up: { label: "Follow-up", color: "bg-blue-100 text-blue-800" },
+  follow_up: { label: "Follow-up", color: "bg-violet-100 text-violet-800" },
   verification: { label: "Verification", color: "bg-yellow-100 text-yellow-800" },
   application_confirmation: { label: "Confirmation", color: "bg-indigo-100 text-indigo-800" },
   other: { label: "Other", color: "bg-gray-100 text-gray-700" },
@@ -3561,7 +4166,7 @@ function InboxTab({
               onClick={() => setFilter(opt.value)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                 filter === opt.value
-                  ? "bg-blue-600 text-white"
+                  ? "bg-violet-600 text-white"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
@@ -3592,7 +4197,7 @@ function InboxTab({
                   }}
                   className={`w-full text-left p-4 rounded-lg border transition-colors ${
                     isSelected
-                      ? "border-blue-500 bg-blue-50"
+                      ? "border-violet-500 bg-violet-50"
                       : "border-gray-200 bg-white hover:border-gray-300"
                   }`}
                 >
@@ -3677,12 +4282,12 @@ function InboxTab({
                     onChange={(e) => setReplyBody(e.target.value)}
                     placeholder="Type a reply on behalf of the seeker..."
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 resize-none"
                   />
                   <button
                     onClick={handleReply}
                     disabled={replying || !replyBody.trim()}
-                    className="mt-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="mt-2 px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {replying ? "Sending..." : "Send Reply"}
                   </button>
@@ -3696,8 +4301,919 @@ function InboxTab({
   );
 }
 
+// ─── Activity Feed Tab ──────────────────────────────────────────────
+function ActivityFeedTab({ seekerId }: { seekerId: string }) {
+  const [events, setEvents] = useState<{
+    id: string; event_type: string; title: string; description: string | null;
+    meta: Record<string, unknown>; created_at: string;
+  }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
+
+  useEffect(() => {
+    const url = `/api/am/seekers/${seekerId}/activity?limit=100${filter ? `&event_type=${filter}` : ""}`;
+    setLoading(true);
+    fetch(url)
+      .then((r) => r.json())
+      .then((d) => setEvents(d.events ?? []))
+      .finally(() => setLoading(false));
+  }, [seekerId, filter]);
+
+  const EVENT_ICONS: Record<string, { color: string; label: string }> = {
+    application_applied: { color: "bg-green-400", label: "Applied" },
+    application_failed: { color: "bg-red-400", label: "Failed" },
+    application_retry: { color: "bg-orange-400", label: "Retry" },
+    feedback_recorded: { color: "bg-purple-400", label: "Feedback" },
+    interview_scheduled: { color: "bg-violet-400", label: "Interview" },
+    outreach_sent: { color: "bg-indigo-400", label: "Outreach" },
+    match_created: { color: "bg-cyan-400", label: "Match" },
+    profile_updated: { color: "bg-gray-400", label: "Profile" },
+  };
+
+  const eventTypes = Array.from(new Set(events.map((e) => e.event_type)));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900">Activity Feed</h3>
+        <select value={filter} onChange={(e) => setFilter(e.target.value)} className="px-3 py-1.5 border rounded-lg text-sm">
+          <option value="">All events</option>
+          {eventTypes.map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="animate-pulse space-y-3">
+          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-12 bg-gray-100 rounded" />)}
+        </div>
+      ) : events.length === 0 ? (
+        <div className="text-center py-12 text-gray-400 text-sm">
+          No activity recorded yet. Events appear here as applications, interviews, and other actions occur.
+        </div>
+      ) : (
+        <div className="relative">
+          {/* Timeline line */}
+          <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-gray-200" />
+
+          <div className="space-y-0">
+            {events.map((e) => {
+              const icon = EVENT_ICONS[e.event_type] ?? { color: "bg-gray-400", label: e.event_type };
+              return (
+                <div key={e.id} className="relative flex gap-4 py-3">
+                  <div className={`w-6 h-6 rounded-full ${icon.color} shrink-0 z-10 flex items-center justify-center`}>
+                    <span className="w-2 h-2 bg-white rounded-full" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-900">{e.title}</p>
+                      <span className="text-xs text-gray-400 shrink-0 ml-2">
+                        {new Date(e.created_at).toLocaleDateString()}{" "}
+                        {new Date(e.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    {e.description && (
+                      <p className="text-sm text-gray-500 mt-0.5">{e.description}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Feedback Tab ───────────────────────────────────────────────────
+const REJECTION_CATEGORIES = [
+  { value: "experience_mismatch", label: "Experience Mismatch" },
+  { value: "skills_gap", label: "Skills Gap" },
+  { value: "overqualified", label: "Overqualified" },
+  { value: "underqualified", label: "Underqualified" },
+  { value: "salary_mismatch", label: "Salary Mismatch" },
+  { value: "location_mismatch", label: "Location Mismatch" },
+  { value: "culture_fit", label: "Culture Fit" },
+  { value: "visa_sponsorship", label: "Visa/Sponsorship" },
+  { value: "internal_candidate", label: "Internal Candidate" },
+  { value: "position_filled", label: "Position Filled" },
+  { value: "company_freeze", label: "Company Hiring Freeze" },
+  { value: "no_response", label: "No Response/Ghosted" },
+  { value: "other", label: "Other" },
+];
+
+const FEEDBACK_TYPES = [
+  { value: "application_rejected", label: "Application Rejected" },
+  { value: "interview_rejected", label: "Interview Rejected" },
+  { value: "ghosted", label: "Ghosted" },
+  { value: "withdrawn", label: "Withdrawn" },
+  { value: "ats_failure", label: "ATS Failure" },
+];
+
+function FeedbackTab({ seekerId }: { seekerId: string }) {
+  const [feedbackList, setFeedbackList] = useState<{
+    id: string; feedback_type: string; rejection_category: string | null;
+    company: string | null; role_title: string | null; notes: string | null;
+    created_at: string;
+  }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [analysis, setAnalysis] = useState<{
+    hasEnoughData: boolean; totalFeedback?: number;
+    categoryCounts?: Record<string, number>;
+    suggestions?: { weight: string; direction: string; reason: string }[];
+  } | null>(null);
+
+  // Form state
+  const [formType, setFormType] = useState("application_rejected");
+  const [formCategory, setFormCategory] = useState("");
+  const [formCompany, setFormCompany] = useState("");
+  const [formRole, setFormRole] = useState("");
+  const [formNotes, setFormNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function loadFeedback() {
+    setLoading(true);
+    fetch(`/api/am/feedback?job_seeker_id=${seekerId}`)
+      .then((r) => r.json())
+      .then((d) => setFeedbackList(d.feedback ?? []))
+      .finally(() => setLoading(false));
+  }
+
+  function loadAnalysis() {
+    fetch(`/api/am/feedback?job_seeker_id=${seekerId}&action=analyze`)
+      .then((r) => r.json())
+      .then(setAnalysis);
+  }
+
+  useEffect(() => {
+    loadFeedback();
+    loadAnalysis();
+  }, [seekerId]);
+
+  async function submitFeedback() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/am/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_seeker_id: seekerId,
+          feedback_type: formType,
+          rejection_category: formCategory || null,
+          company: formCompany || null,
+          role_title: formRole || null,
+          notes: formNotes || null,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setShowForm(false);
+      setFormType("application_rejected");
+      setFormCategory("");
+      setFormCompany("");
+      setFormRole("");
+      setFormNotes("");
+      loadFeedback();
+      loadAnalysis();
+    } catch {
+      alert("Failed to record feedback");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function applyWeightAdjustment() {
+    if (!confirm("Apply AI-suggested weight adjustments based on rejection patterns?")) return;
+    const res = await fetch("/api/am/feedback", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_seeker_id: seekerId, action: "apply_weight_adjustment" }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`Weights updated! Changes: ${JSON.stringify(data.suggestions?.map((s: { weight: string; direction: string }) => `${s.weight} ${s.direction}`) ?? [])}`);
+      loadAnalysis();
+    } else {
+      alert(data.error ?? "Failed to apply adjustment");
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900">Rejection Feedback</h3>
+        <button onClick={() => setShowForm(true)} className="px-3 py-1.5 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700">
+          + Record Feedback
+        </button>
+      </div>
+
+      <p className="text-sm text-gray-500">
+        Track rejection reasons to improve matching accuracy. The system analyzes patterns and suggests weight adjustments.
+      </p>
+
+      {/* Analysis card */}
+      {analysis && analysis.hasEnoughData && (
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-medium text-purple-900">Pattern Analysis ({analysis.totalFeedback} feedback entries)</h4>
+            {analysis.suggestions && analysis.suggestions.length > 0 && (
+              <button onClick={applyWeightAdjustment} className="px-3 py-1 bg-purple-600 text-white text-xs rounded-lg hover:bg-purple-700">
+                Apply Suggested Adjustments
+              </button>
+            )}
+          </div>
+
+          {analysis.categoryCounts && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {Object.entries(analysis.categoryCounts)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 5)
+                .map(([cat, count]) => (
+                  <span key={cat} className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
+                    {cat.replace(/_/g, " ")}: {count}
+                  </span>
+                ))}
+            </div>
+          )}
+
+          {analysis.suggestions && analysis.suggestions.length > 0 && (
+            <div className="space-y-1 mt-2">
+              {analysis.suggestions.map((s, i) => (
+                <p key={i} className="text-xs text-purple-700">
+                  → {s.direction === "increase" ? "Increase" : "Decrease"} <strong>{s.weight}</strong> weight — {s.reason}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add form */}
+      {showForm && (
+        <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium text-gray-900">Record Feedback</h4>
+            <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-sm">Cancel</button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Feedback Type</label>
+              <select value={formType} onChange={(e) => setFormType(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                {FEEDBACK_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Rejection Category</label>
+              <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                <option value="">Select...</option>
+                {REJECTION_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Company</label>
+              <input value={formCompany} onChange={(e) => setFormCompany(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Company name" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Role</label>
+              <input value={formRole} onChange={(e) => setFormRole(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Role title" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+            <textarea value={formNotes} onChange={(e) => setFormNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" rows={2} placeholder="Additional context..." />
+          </div>
+
+          <button onClick={submitFeedback} disabled={saving} className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50">
+            {saving ? "Saving..." : "Save Feedback"}
+          </button>
+        </div>
+      )}
+
+      {/* Feedback list */}
+      {loading ? (
+        <div className="animate-pulse space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-16 bg-gray-100 rounded" />)}</div>
+      ) : feedbackList.length === 0 ? (
+        <div className="text-center py-8 text-gray-400 text-sm">
+          No feedback recorded. Record rejection reasons to improve this seeker&apos;s matching accuracy.
+        </div>
+      ) : (
+        <div className="divide-y border rounded-lg bg-white">
+          {feedbackList.map((f) => (
+            <div key={f.id} className="px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    f.feedback_type.includes("rejected") ? "bg-red-100 text-red-700" :
+                    f.feedback_type === "ghosted" ? "bg-gray-100 text-gray-700" :
+                    "bg-yellow-100 text-yellow-700"
+                  }`}>
+                    {f.feedback_type.replace(/_/g, " ")}
+                  </span>
+                  {f.rejection_category && (
+                    <span className="text-xs text-gray-500">{f.rejection_category.replace(/_/g, " ")}</span>
+                  )}
+                </div>
+                <span className="text-xs text-gray-400">{new Date(f.created_at).toLocaleDateString()}</span>
+              </div>
+              {(f.company || f.role_title) && (
+                <p className="text-sm text-gray-700 mt-1">{f.company}{f.role_title ? ` — ${f.role_title}` : ""}</p>
+              )}
+              {f.notes && <p className="text-xs text-gray-500 mt-0.5">{f.notes}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Client Facts Tab (Confirmed-Fact Ledger) ───────────────────────
+type FactRow = {
+  fact_key: string;
+  label: string;
+  category: string;
+  sensitivity: string;
+  value_type: string;
+  value: string | null;
+  provenance: string | null;
+  confirmed_at: string | null;
+  expires_at: string | null;
+  resolution: { status: string; reason?: string };
+};
+
+function ClientFactsTab({ seekerId }: { seekerId: string }) {
+  const [facts, setFacts] = useState<FactRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/am/seekers/${seekerId}/facts`)
+      .then((r) => (r.ok ? r.json() : { facts: [] }))
+      .then((d) => setFacts(d.facts ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [seekerId]);
+
+  async function save(factKey: string) {
+    if (!editValue.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/am/seekers/${seekerId}/facts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fact_key: factKey, value: editValue.trim() }),
+      });
+      if (!res.ok) throw new Error();
+      const { fact, resolution } = await res.json();
+      setFacts((prev) =>
+        prev.map((f) =>
+          f.fact_key === factKey
+            ? {
+                ...f,
+                value: fact.fact_value,
+                provenance: fact.provenance,
+                confirmed_at: fact.confirmed_at,
+                expires_at: fact.expires_at,
+                resolution,
+              }
+            : f
+        )
+      );
+      setEditingKey(null);
+    } catch {
+      alert("Failed to save fact");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function badge(r: FactRow["resolution"]): [string, string] {
+    if (r.status === "confirmed") return ["bg-green-100 text-green-700", "Confirmed"];
+    if (r.status === "escalate") return ["bg-red-100 text-red-700", "Escalate"];
+    const label =
+      r.reason === "stale" ? "Stale" : r.reason === "missing" ? "Missing" : "Needs confirmation";
+    return ["bg-amber-100 text-amber-700", label];
+  }
+
+  if (loading) {
+    return <div className="text-sm text-gray-400 py-8 text-center">Loading client facts…</div>;
+  }
+
+  const categories = Array.from(new Set(facts.map((f) => f.category)));
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900">Client Facts</h3>
+        <p className="text-sm text-gray-500 mt-1">
+          The confirmed-fact ledger. Automation may only assert <strong>Confirmed</strong> facts;
+          sensitive items need fresh client confirmation, and legal/EEO items always escalate.
+          <span className="text-gray-400"> (Shadow mode — not yet enforced on the runner.)</span>
+        </p>
+      </div>
+
+      {categories.map((cat) => (
+        <div key={cat}>
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">{cat}</h4>
+          <div className="divide-y border rounded-lg bg-white">
+            {facts
+              .filter((f) => f.category === cat)
+              .map((f) => {
+                const [cls, label] = badge(f.resolution);
+                const isLegal = f.sensitivity === "legal";
+                return (
+                  <div key={f.fact_key} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">{f.label}</span>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls}`}>{label}</span>
+                          {f.sensitivity !== "standard" && (
+                            <span className="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
+                              {f.sensitivity}
+                            </span>
+                          )}
+                        </div>
+                        {editingKey === f.fact_key ? (
+                          <div className="mt-2 flex gap-2">
+                            <input
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              placeholder="Confirmed value"
+                              className="flex-1 px-3 py-1.5 border rounded text-sm"
+                            />
+                            <button
+                              onClick={() => save(f.fact_key)}
+                              disabled={saving}
+                              className="px-3 py-1.5 bg-violet-600 text-white text-sm rounded hover:bg-violet-700 disabled:opacity-50"
+                            >
+                              {saving ? "Saving…" : "Save"}
+                            </button>
+                            <button
+                              onClick={() => setEditingKey(null)}
+                              className="px-3 py-1.5 text-gray-500 text-sm"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-600 mt-0.5">
+                            {f.value ? f.value : <span className="text-gray-400">— not set —</span>}
+                            {f.provenance ? (
+                              <span className="text-xs text-gray-400"> · {f.provenance}</span>
+                            ) : null}
+                          </p>
+                        )}
+                        {isLegal && (
+                          <p className="text-xs text-red-500 mt-1">
+                            Legal/EEO — automation never answers this; route to client / escalation.
+                          </p>
+                        )}
+                      </div>
+                      {editingKey !== f.fact_key && !isLegal && (
+                        <button
+                          onClick={() => {
+                            setEditingKey(f.fact_key);
+                            setEditValue(f.value ?? "");
+                          }}
+                          className="text-sm text-violet-600 hover:text-violet-800 flex-shrink-0"
+                        >
+                          {f.value ? "Update" : "Confirm"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Screening Answers Tab ──────────────────────────────────────────
+const PRESET_QUESTIONS: { key: string; text: string; type: string }[] = [
+  { key: "work_authorization", text: "Are you authorized to work in the US?", type: "select" },
+  { key: "sponsorship", text: "Will you now or in the future require sponsorship?", type: "select" },
+  { key: "salary_expectations", text: "What are your salary expectations?", type: "text" },
+  { key: "years_experience", text: "How many years of relevant experience do you have?", type: "text" },
+  { key: "willing_to_relocate", text: "Are you willing to relocate?", type: "select" },
+  { key: "start_date", text: "When can you start?", type: "text" },
+  { key: "notice_period", text: "What is your notice period?", type: "text" },
+  { key: "highest_education", text: "What is your highest level of education?", type: "text" },
+  { key: "how_did_you_hear", text: "How did you hear about this position?", type: "text" },
+  { key: "gender", text: "Gender (EEO)", type: "select" },
+  { key: "race_ethnicity", text: "Race/Ethnicity (EEO)", type: "select" },
+  { key: "veteran_status", text: "Veteran status (EEO)", type: "select" },
+  { key: "disability_status", text: "Disability status (EEO)", type: "select" },
+];
+
+function ScreeningAnswersTab({
+  seekerId,
+  initialAnswers,
+}: {
+  seekerId: string;
+  initialAnswers: ScreeningAnswer[];
+}) {
+  const [answers, setAnswers] = useState<ScreeningAnswer[]>(initialAnswers);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [editText, setEditText] = useState("");
+  const [editType, setEditType] = useState("text");
+  const [saving, setSaving] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newKey, setNewKey] = useState("");
+  const [newText, setNewText] = useState("");
+  const [newValue, setNewValue] = useState("");
+  const [newType, setNewType] = useState("text");
+
+  const answerMap = new Map(answers.map((a) => [a.question_key, a]));
+
+  async function saveAnswer(questionKey: string, questionText: string, answerValue: string, answerType: string) {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/am/seekers/${seekerId}/screening-answers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question_key: questionKey,
+          question_text: questionText,
+          answer_value: answerValue,
+          answer_type: answerType,
+        }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const { answer } = await res.json();
+      setAnswers((prev) => {
+        const idx = prev.findIndex((a) => a.question_key === questionKey);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = answer;
+          return copy;
+        }
+        return [...prev, answer];
+      });
+      setEditingKey(null);
+    } catch {
+      alert("Failed to save answer");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteAnswer(answerId: string) {
+    if (!confirm("Delete this screening answer?")) return;
+    try {
+      const res = await fetch(`/api/am/seekers/${seekerId}/screening-answers`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answer_id: answerId }),
+      });
+      if (!res.ok) throw new Error("Delete failed");
+      setAnswers((prev) => prev.filter((a) => a.id !== answerId));
+    } catch {
+      alert("Failed to delete answer");
+    }
+  }
+
+  function startEdit(a: ScreeningAnswer) {
+    setEditingKey(a.question_key);
+    setEditValue(a.answer_value);
+    setEditText(a.question_text);
+    setEditType(a.answer_type);
+  }
+
+  // Question keys not yet answered
+  const unusedPresets = PRESET_QUESTIONS.filter((p) => !answerMap.has(p.key));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900">Screening Answers</h3>
+        <button
+          onClick={() => setShowAdd(true)}
+          className="px-3 py-1.5 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700"
+        >
+          + Add Answer
+        </button>
+      </div>
+
+      <p className="text-sm text-gray-500">
+        Pre-configured answers the runner uses to fill common screening questions on job applications.
+      </p>
+
+      {/* Add form */}
+      {showAdd && (
+        <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium text-gray-900">Add Screening Answer</h4>
+            <button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 text-sm">Cancel</button>
+          </div>
+
+          {unusedPresets.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Quick-add preset</label>
+              <select
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+                value=""
+                onChange={(e) => {
+                  const p = PRESET_QUESTIONS.find((q) => q.key === e.target.value);
+                  if (p) {
+                    setNewKey(p.key);
+                    setNewText(p.text);
+                    setNewType(p.type);
+                  }
+                }}
+              >
+                <option value="">Select a common question...</option>
+                {unusedPresets.map((p) => (
+                  <option key={p.key} value={p.key}>{p.text}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Question Key</label>
+              <input
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value)}
+                placeholder="e.g. work_authorization"
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+              <select value={newType} onChange={(e) => setNewType(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                <option value="text">Text</option>
+                <option value="select">Select</option>
+                <option value="radio">Radio</option>
+                <option value="checkbox">Checkbox</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Question Text</label>
+            <input
+              value={newText}
+              onChange={(e) => setNewText(e.target.value)}
+              placeholder="Full question text"
+              className="w-full px-3 py-2 border rounded-lg text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Answer Value</label>
+            <input
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              placeholder="The answer to fill in"
+              className="w-full px-3 py-2 border rounded-lg text-sm"
+            />
+          </div>
+
+          <button
+            onClick={() => {
+              if (!newKey.trim() || !newValue.trim()) return;
+              saveAnswer(newKey.trim(), newText.trim(), newValue.trim(), newType);
+              setNewKey("");
+              setNewText("");
+              setNewValue("");
+              setNewType("text");
+              setShowAdd(false);
+            }}
+            disabled={saving || !newKey.trim() || !newValue.trim()}
+            className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save Answer"}
+          </button>
+        </div>
+      )}
+
+      {/* Answers list */}
+      {answers.length === 0 ? (
+        <div className="text-center py-8 text-gray-400 text-sm">
+          No screening answers configured. Add answers so the runner can fill common application fields automatically.
+        </div>
+      ) : (
+        <div className="divide-y border rounded-lg bg-white">
+          {answers.map((a) => (
+            <div key={a.id} className="px-4 py-3">
+              {editingKey === a.question_key ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-gray-700">{a.question_key}</div>
+                  <input
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    placeholder="Question text"
+                    className="w-full px-3 py-1.5 border rounded text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      placeholder="Answer value"
+                      className="flex-1 px-3 py-1.5 border rounded text-sm"
+                    />
+                    <select value={editType} onChange={(e) => setEditType(e.target.value)} className="px-2 py-1.5 border rounded text-sm">
+                      <option value="text">Text</option>
+                      <option value="select">Select</option>
+                      <option value="radio">Radio</option>
+                      <option value="checkbox">Checkbox</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveAnswer(a.question_key, editText, editValue, editType)}
+                      disabled={saving}
+                      className="px-3 py-1 bg-violet-600 text-white text-xs rounded hover:bg-violet-700 disabled:opacity-50"
+                    >
+                      {saving ? "Saving..." : "Save"}
+                    </button>
+                    <button onClick={() => setEditingKey(null)} className="px-3 py-1 text-gray-500 text-xs hover:text-gray-700">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">{a.question_key}</span>
+                      <span className="text-xs text-gray-400">{a.answer_type}</span>
+                    </div>
+                    {a.question_text && (
+                      <p className="text-sm text-gray-500 mt-0.5">{a.question_text}</p>
+                    )}
+                    <p className="text-sm font-medium text-gray-900 mt-1">{a.answer_value}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={() => startEdit(a)} className="px-2 py-1 text-xs text-violet-600 hover:bg-violet-50 rounded">
+                      Edit
+                    </button>
+                    <button onClick={() => deleteAnswer(a.id)} className="px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded">
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Debug Screenshots Tab ──────────────────────────────────────────
+function DebugScreenshotsTab({
+  screenshots,
+  runs,
+}: {
+  screenshots: FailureScreenshot[];
+  runs: RunItem[];
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const runMap = new Map(runs.map((r) => [r.id, r]));
+
+  const reasonColors: Record<string, string> = {
+    captcha: "bg-yellow-100 text-yellow-800",
+    required_fields: "bg-orange-100 text-orange-800",
+    timeout: "bg-red-100 text-red-800",
+    error: "bg-red-100 text-red-800",
+    navigation: "bg-purple-100 text-purple-800",
+  };
+
+  function getReasonBadgeClass(reason: string) {
+    const lower = reason.toLowerCase();
+    for (const [key, cls] of Object.entries(reasonColors)) {
+      if (lower.includes(key)) return cls;
+    }
+    return "bg-gray-100 text-gray-800";
+  }
+
+  if (screenshots.length === 0) {
+    return (
+      <div className="text-center py-12 text-gray-400">
+        <p className="text-lg mb-1">No failure screenshots</p>
+        <p className="text-sm">Screenshots are captured when the runner encounters errors during applications.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900">Failure Screenshots</h3>
+        <span className="text-sm text-gray-500">{screenshots.length} screenshot{screenshots.length !== 1 ? "s" : ""}</span>
+      </div>
+
+      <div className="space-y-3">
+        {screenshots.map((s) => {
+          const run = runMap.get(s.run_id);
+          const isExpanded = expandedId === s.id;
+
+          return (
+            <div key={s.id} className="border rounded-lg bg-white overflow-hidden">
+              <button
+                onClick={() => setExpandedId(isExpanded ? null : s.id)}
+                className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getReasonBadgeClass(s.reason)}`}>
+                    {s.reason || "unknown"}
+                  </span>
+                  <span className="text-sm text-gray-700 truncate">
+                    {s.step && <span className="font-medium">Step: {s.step}</span>}
+                    {run?.job_posts && (
+                      <span className="text-gray-500 ml-2">
+                        — {run.job_posts.company}: {run.job_posts.title}
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-xs text-gray-400">
+                    {new Date(s.created_at).toLocaleDateString()}{" "}
+                    {new Date(s.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <span className="text-gray-400 text-xs">{isExpanded ? "▲" : "▼"}</span>
+                </div>
+              </button>
+
+              {isExpanded && (
+                <div className="border-t px-4 py-4 space-y-3">
+                  {/* Run context */}
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                    <div>
+                      <span className="text-gray-500">Run ID:</span>{" "}
+                      <span className="font-mono text-xs text-gray-700">{s.run_id.slice(0, 8)}...</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Status:</span>{" "}
+                      <span className="text-gray-700">{run?.status || "—"}</span>
+                    </div>
+                    {s.url && (
+                      <div className="col-span-2">
+                        <span className="text-gray-500">URL:</span>{" "}
+                        <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-violet-600 hover:text-violet-800 text-xs break-all">
+                          {s.url}
+                        </a>
+                      </div>
+                    )}
+                    {run?.last_error && (
+                      <div className="col-span-2">
+                        <span className="text-gray-500">Error:</span>{" "}
+                        <span className="text-red-600 text-xs">{run.last_error}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Screenshot image */}
+                  <div className="bg-gray-100 rounded-lg p-2">
+                    <img
+                      src={`/api/apply/screenshot/view?path=${encodeURIComponent(s.screenshot_path)}`}
+                      alt={`Failure screenshot: ${s.reason}`}
+                      className="w-full rounded border border-gray-200"
+                      loading="lazy"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                        (e.target as HTMLImageElement).insertAdjacentHTML(
+                          "afterend",
+                          '<p class="text-sm text-gray-400 py-4 text-center">Screenshot not available</p>'
+                        );
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Utility components
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function dateLabel(value: string | null): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString();
+}
+
+function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="bg-gray-50 rounded-lg p-4">
       <h3 className="font-semibold text-gray-900 mb-3">{title}</h3>
@@ -3712,7 +5228,7 @@ function InfoRow({ label, value, link }: { label: string; value: string | null; 
       <dt className="text-gray-500 text-sm">{label}</dt>
       <dd className="text-gray-900 text-sm">
         {link && value ? (
-          <a href={value} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
+          <a href={value} target="_blank" rel="noopener noreferrer" className="text-violet-600 hover:text-violet-800">
             {value.replace(/^https?:\/\//, "").slice(0, 30)}...
           </a>
         ) : (
@@ -3741,7 +5257,7 @@ function FilterButton({
         active
           ? highlight
             ? "bg-orange-600 text-white"
-            : "bg-blue-600 text-white"
+            : "bg-violet-600 text-white"
           : highlight
           ? "bg-orange-100 text-orange-800"
           : "bg-gray-100 text-gray-700"
@@ -3755,10 +5271,10 @@ function FilterButton({
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     QUEUED: "bg-yellow-100 text-yellow-800",
-    RUNNING: "bg-blue-100 text-blue-800",
+    RUNNING: "bg-violet-100 text-violet-800",
     PAUSED: "bg-gray-100 text-gray-800",
-    READY: "bg-blue-100 text-blue-800",
-    RETRYING: "bg-blue-100 text-blue-800",
+    READY: "bg-violet-100 text-violet-800",
+    RETRYING: "bg-violet-100 text-violet-800",
     APPLIED: "bg-green-100 text-green-800",
     COMPLETED: "bg-green-100 text-green-800",
     NEEDS_ATTENTION: "bg-orange-100 text-orange-800",

@@ -10,6 +10,16 @@ on:
     - cron: "0 3 * * *"
     # Daily intelligence feedback loop (05:00 UTC)
     - cron: "0 5 * * *"
+    # Daily client match cleaner — removes matches older than 1 week (04:00 UTC)
+    - cron: "0 4 * * *"
+    # Daily QA sampling — first-3-per-seeker + 5% of completed runs (06:30 UTC)
+    - cron: "30 6 * * *"
+    # Weekly client report drafts — Fridays 14:00 UTC, ready for AM review
+    - cron: "0 14 * * 5"
+    # Daily follow-up drafts — day-3/7 bumps for applied-no-response (07:00 UTC)
+    - cron: "0 7 * * *"
+    # Daily outcome rollup — application→interview conversion tracking (07:30 UTC)
+    - cron: "30 7 * * *"
   # Manual trigger for testing
   workflow_dispatch:
 
@@ -98,3 +108,63 @@ jobs:
           OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
         run: |
           curl -fsSL -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/intelligence/run"
+
+  clean-client-matches:
+    name: Clean Client Matches
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 4 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove matches older than 1 week (applied jobs are saved for their assets first)
+        env:
+          WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
+          OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
+        run: |
+          curl -fsSL -X POST -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/clean-matches?max_age_days=7"
+
+  qa-sample:
+    name: QA Sampling
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 6 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sample completed runs into the QA review queue
+        env:
+          WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
+          OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
+        run: |
+          curl -fsSL -X POST -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/qa-sample"
+
+  client-reports:
+    name: Weekly Client Report Drafts
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 14 * * 5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Draft weekly activity reports for active clients
+        env:
+          WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
+          OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
+        run: |
+          curl -fsSL -X POST -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/client-reports"
+
+  follow-up-drafts:
+    name: Follow-up Drafts
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 7 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Draft day-3/7 follow-ups for applied-no-response runs
+        env:
+          WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
+          OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
+        run: |
+          curl -fsSL -X POST -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/follow-ups"
+
+  outcomes-rollup:
+    name: Outcome Rollup
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 7 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh application_outcomes (application→interview conversion)
+        env:
+          WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
+          OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
+        run: |
+          curl -fsSL -X POST -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/outcomes-rollup"

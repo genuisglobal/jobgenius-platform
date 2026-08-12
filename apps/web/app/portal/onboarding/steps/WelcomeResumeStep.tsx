@@ -95,24 +95,24 @@ export default function WelcomeResumeStep({
 
       <div className="space-y-3 mb-6">
         <div className="flex items-start gap-3">
-          <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <svg className="w-3.5 h-3.5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+          <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-3.5 h-3.5 text-violet-600" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
           </div>
           <p className="text-sm text-gray-700">Your dedicated account manager will search and apply for jobs on your behalf.</p>
         </div>
         <div className="flex items-start gap-3">
-          <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <svg className="w-3.5 h-3.5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+          <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-3.5 h-3.5 text-violet-600" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
           </div>
           <p className="text-sm text-gray-700">We match you with roles based on your skills, experience, and preferences.</p>
         </div>
         <div className="flex items-start gap-3">
-          <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <svg className="w-3.5 h-3.5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+          <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-3.5 h-3.5 text-violet-600" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
           </div>
@@ -120,15 +120,15 @@ export default function WelcomeResumeStep({
         </div>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-        <p className="text-sm text-blue-800">
+      <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 mb-6">
+        <p className="text-sm text-violet-800">
           Uploading your resume lets us pre-fill most of your profile automatically.
         </p>
       </div>
 
       {/* Upload zone */}
       <div
-        className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
+        className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-violet-400 transition-colors cursor-pointer"
         onClick={() => fileRef.current?.click()}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
@@ -162,7 +162,7 @@ export default function WelcomeResumeStep({
                 <p className="text-sm font-medium text-gray-900">{doc.file_name}</p>
                 <p className="text-xs text-gray-500">{new Date(doc.uploaded_at).toLocaleDateString()}</p>
               </div>
-              <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:text-blue-800">Download</a>
+              <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-violet-600 hover:text-violet-800">Download</a>
             </div>
           ))}
         </div>
@@ -172,7 +172,7 @@ export default function WelcomeResumeStep({
         <button onClick={onContinue} className="text-sm text-gray-500 hover:text-gray-700">
           Fill in manually instead
         </button>
-        <button onClick={onContinue} className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+        <button onClick={onContinue} className="px-6 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700">
           Continue
         </button>
       </div>

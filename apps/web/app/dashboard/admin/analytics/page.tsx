@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, supabaseAdmin } from "@/lib/auth";
+import { loadAdjacentOperatorAnalytics } from "@/lib/analytics/adjacent-operator";
 import { normalizeAMRole } from "@/lib/auth/roles";
 import AnalyticsClient from "./AnalyticsClient";
 
@@ -35,6 +36,7 @@ export default async function AnalyticsPage() {
     { count: applicationsThisMonth },
     { count: applicationsPrevMonth },
     { data: amList },
+    adjacentOperator,
   ] = await Promise.all([
     supabaseAdmin.from("job_seekers").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabaseAdmin.from("job_seeker_assignments").select("job_seeker_id", { count: "exact", head: true }),
@@ -46,6 +48,7 @@ export default async function AnalyticsPage() {
     supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).gte("applied_at", monthStart),
     supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).gte("applied_at", prevMonthStart).lt("applied_at", monthStart),
     supabaseAdmin.from("account_managers").select("id, full_name, profile_photo_url").eq("status", "active").limit(20),
+    loadAdjacentOperatorAnalytics(),
   ]);
 
   let leaderboard: LeaderboardEntry[] = [];
@@ -114,6 +117,7 @@ export default async function AnalyticsPage() {
         applications_prev_month: applicationsPrevMonth ?? 0,
       }}
       leaderboard={leaderboard}
+      adjacentOperator={adjacentOperator}
     />
   );
 }

@@ -236,7 +236,7 @@ export default function JobSeekersClient({
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/dashboard/admin/job-seekers/${seeker.id}`}
-                      className="text-sm text-blue-600 hover:text-blue-800"
+                      className="text-sm text-violet-600 hover:text-violet-800"
                     >
                       View &amp; Manage
                     </Link>

@@ -1,4 +1,5 @@
 import { getAccountManagerFromRequest } from "@/lib/am-access";
+import { isManualQueueCategory } from "@/lib/queue-categories";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type Counts = {
@@ -142,7 +143,7 @@ export async function GET(request: Request) {
   for (const queueItem of queueItems ?? []) {
     const counts = countsBySeeker.get(queueItem.job_seeker_id);
     if (!counts) continue;
-    if (queueItem.category === "manual") {
+    if (isManualQueueCategory(queueItem.category)) {
       counts.manual += 1;
     }
   }

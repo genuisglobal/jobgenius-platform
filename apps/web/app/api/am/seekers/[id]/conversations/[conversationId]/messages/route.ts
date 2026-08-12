@@ -60,12 +60,16 @@ export async function GET(request: Request, { params }: RouteParams) {
     );
   }
 
-  await supabaseAdmin
+  const { error: markReadError } = await supabaseAdmin
     .from("conversation_messages")
     .update({ read_at: new Date().toISOString() })
     .eq("conversation_id", conversationId)
     .eq("sender_type", "job_seeker")
     .is("read_at", null);
+
+  if (markReadError) {
+    console.error("[am:conversations] failed to mark messages read:", markReadError);
+  }
 
   return NextResponse.json({
     conversation,
@@ -197,10 +201,14 @@ export async function POST(request: Request, { params }: RouteParams) {
     conversationUpdate.conversation_type = "task";
   }
 
-  await supabaseAdmin
+  const { error: convUpdateError } = await supabaseAdmin
     .from("conversations")
     .update(conversationUpdate)
     .eq("id", conversationId);
+
+  if (convUpdateError) {
+    console.error("[am:conversations] failed to update conversation:", convUpdateError);
+  }
 
   if (payload.notify_seeker !== false) {
     const { data: seeker } = await supabaseAdmin

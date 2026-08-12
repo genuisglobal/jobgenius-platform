@@ -1,7 +1,7 @@
 import { supabaseServer } from "@/lib/supabase/server";
 import { verifyExtensionSession } from "@/lib/extension-auth";
 import { authenticateRequest } from "@/lib/auth";
-import { parseJobPost } from "@/lib/matching";
+import { parseJobPostSmart } from "@/lib/matching";
 import { enqueueBackgroundJob } from "@/lib/background-jobs";
 import { normalizeJobUrl } from "@/lib/job-url";
 
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     // Parse structured data from description if available
     let parsedData: { [key: string]: unknown } = {};
     if (payload.raw_text) {
-      const parsed = parseJobPost(
+      const parsed = await parseJobPostSmart(
         payload.title,
         payload.company ?? null,
         payload.location ?? null,

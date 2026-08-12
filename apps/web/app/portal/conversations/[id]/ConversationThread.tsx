@@ -197,7 +197,7 @@ export default function ConversationThread({
           <div>
             <Link
               href="/portal/conversations"
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className="text-sm text-violet-600 hover:text-violet-800"
             >
               &larr; Back to conversations
             </Link>
@@ -211,7 +211,7 @@ export default function ConversationThread({
                     ? "bg-purple-100 text-purple-700"
                     : isTaskConversation
                     ? "bg-amber-100 text-amber-700"
-                    : "bg-blue-100 text-blue-700"
+                    : "bg-violet-100 text-violet-700"
                 }`}
               >
                 {isApplicationQuestion
@@ -266,7 +266,7 @@ export default function ConversationThread({
                 <div
                   className={`max-w-[85%] sm:max-w-[70%] rounded-lg px-4 py-3 ${
                     isMe
-                      ? "bg-blue-600 text-white"
+                      ? "bg-violet-600 text-white"
                       : hasTask
                       ? "bg-amber-50 text-amber-900 border border-amber-200"
                       : "bg-gray-100 text-gray-900"
@@ -275,7 +275,7 @@ export default function ConversationThread({
                   <div className="flex items-center gap-2 mb-1">
                     <span
                       className={`text-xs font-medium ${
-                        isMe ? "text-blue-100" : "text-gray-500"
+                        isMe ? "text-violet-100" : "text-gray-500"
                       }`}
                     >
                       {isMe
@@ -284,7 +284,7 @@ export default function ConversationThread({
                     </span>
                     <span
                       className={`text-xs ${
-                        isMe ? "text-blue-200" : "text-gray-400"
+                        isMe ? "text-violet-200" : "text-gray-400"
                       }`}
                       title={new Date(msg.created_at).toLocaleString()}
                     >
@@ -356,7 +356,7 @@ export default function ConversationThread({
                     msg.sender_id === userId && (
                       <button
                         onClick={() => handleMarkAsAnswer(msg.id)}
-                        className="mt-2 text-xs underline text-blue-200 hover:text-white"
+                        className="mt-2 text-xs underline text-violet-200 hover:text-white"
                       >
                         Save as reusable answer
                       </button>
@@ -396,12 +396,12 @@ export default function ConversationThread({
                   ? "Share a task update..."
                   : "Type your message..."
               }
-              className="flex-1 min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="flex-1 min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
             />
             <button
               type="submit"
               disabled={sending || !newMessage.trim()}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors shrink-0"
+              className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-md hover:bg-violet-700 disabled:opacity-50 transition-colors shrink-0"
             >
               {sending ? "..." : "Send"}
             </button>

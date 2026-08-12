@@ -102,7 +102,7 @@ export default function ConversationsClient({
                           ? "bg-purple-100 text-purple-700"
                           : conv.conversation_type === "task"
                           ? "bg-amber-100 text-amber-700"
-                          : "bg-blue-100 text-blue-700"
+                          : "bg-violet-100 text-violet-700"
                       }`}
                     >
                       {conv.conversation_type === "application_question"

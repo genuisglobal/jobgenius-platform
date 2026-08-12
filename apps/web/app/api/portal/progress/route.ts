@@ -146,7 +146,7 @@ export async function GET(request: Request) {
   else if (xp >= 100) level = "Active Seeker";
 
   // Update profile with latest values
-  await supabaseAdmin
+  const { error: progressUpdateError } = await supabaseAdmin
     .from("job_seekers")
     .update({
       profile_completion: percentage,
@@ -154,6 +154,10 @@ export async function GET(request: Request) {
       achievements: achievements.filter((a) => a.unlocked).map((a) => a.key),
     })
     .eq("id", auth.user.id);
+
+  if (progressUpdateError) {
+    console.error("[portal:progress] failed to update seeker progress:", progressUpdateError);
+  }
 
   return NextResponse.json({
     profile_completion: percentage,

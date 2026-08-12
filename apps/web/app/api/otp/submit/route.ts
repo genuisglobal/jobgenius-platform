@@ -1,6 +1,7 @@
 import { supabaseServer } from "@/lib/supabase/server";
 import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
 import { requireOpsAuth } from "@/lib/ops-auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 type OtpPayload = {
   job_seeker_id?: string;
@@ -9,6 +10,25 @@ type OtpPayload = {
 };
 
 export async function POST(request: Request) {
+  const otpRateLimit = await enforceRateLimit({
+    request,
+    scope: "otp_submit",
+    identifier: "global",
+    limit: 5,
+    windowSeconds: 60,
+    blockSeconds: 60,
+  });
+
+  if (!otpRateLimit.allowed) {
+    return Response.json(
+      { success: false, error: "Too many OTP submissions. Please try again later." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(Math.max(1, otpRateLimit.retryAfterSeconds)) },
+      }
+    );
+  }
+
   let payload: OtpPayload;
 
   try {

@@ -88,7 +88,7 @@ export function TopOppQueueButton({
     <button
       onClick={queue}
       disabled={loading}
-      className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+      className="px-3 py-1 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50"
     >
       {loading ? "..." : "Queue"}
     </button>

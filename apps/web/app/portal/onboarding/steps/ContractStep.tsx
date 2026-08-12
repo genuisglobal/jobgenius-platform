@@ -3,11 +3,27 @@
 import { useState } from "react";
 import { generateContractHTML } from "@/lib/contract-template";
 
+type PlanType = "essentials" | "premium";
+
+interface OfferQuote {
+  planType: PlanType;
+  code: string | null;
+  source: "promo_code" | "seeker_referral" | null;
+  applied: boolean;
+  invalidCode: boolean;
+  baseFee: number;
+  discountPercent: number;
+  discountAmount: number;
+  finalFee: number;
+}
+
 interface ContractStepProps {
   seekerName: string;
   seekerEmail: string;
-  planType: "essentials" | "premium";
-  onContinue: () => void;
+  planType: PlanType;
+  offerCode: string | null;
+  quote: OfferQuote;
+  onContinue: (registrationFee: number) => void;
   onBack: () => void;
 }
 
@@ -15,6 +31,8 @@ export default function ContractStep({
   seekerName,
   seekerEmail,
   planType,
+  offerCode,
+  quote,
   onContinue,
   onBack,
 }: ContractStepProps) {
@@ -22,13 +40,21 @@ export default function ContractStep({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const registrationFee = planType === "premium" ? 1000 : 500;
-
   const contractHTML = generateContractHTML({
     seekerName,
     seekerEmail,
     planType,
-    registrationFee,
+    registrationFee: quote.finalFee,
+    baseRegistrationFee: quote.baseFee,
+    discountAmount: quote.discountAmount,
+    discountPercent: quote.discountPercent,
+    discountCode: quote.code,
+    discountLabel:
+      quote.source === "promo_code"
+        ? "Promo code"
+        : quote.source === "seeker_referral"
+        ? "Referral code"
+        : null,
     commissionRate: 0.05,
     agreedDate: new Date().toISOString(),
   });
@@ -43,16 +69,19 @@ export default function ContractStep({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           planType,
-          registrationFee,
-          contractHTML,
+          offerCode,
         }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json();
         setError(data.error || "Failed to sign contract. Please try again.");
         return;
       }
-      onContinue();
+      onContinue(
+        typeof data.registrationFee === "number"
+          ? data.registrationFee
+          : quote.finalFee
+      );
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -63,33 +92,32 @@ export default function ContractStep({
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 sm:p-8">
       <div className="mb-4">
-        <h2 className="text-xl font-semibold text-gray-900">Client Engagement Agreement</h2>
+        <h2 className="text-xl font-semibold text-gray-900">
+          Client Engagement Agreement
+        </h2>
         <p className="text-gray-500 mt-1 text-sm">
-          Please read the full agreement below before proceeding. You must scroll to the bottom and check the box to continue.
+          Review the agreement, including your final registration fee, before you
+          continue.
         </p>
       </div>
 
-      {/* Contract iframe-style scrollable box */}
       <div
         className="border border-gray-300 rounded-lg overflow-auto bg-white mb-4"
         style={{ height: "420px" }}
       >
-        <div
-          dangerouslySetInnerHTML={{ __html: contractHTML }}
-          className="p-1"
-        />
+        <div dangerouslySetInnerHTML={{ __html: contractHTML }} className="p-1" />
       </div>
 
-      {/* Agree checkbox */}
       <label className="flex items-start gap-3 cursor-pointer mb-4 select-none">
         <input
           type="checkbox"
           checked={agreed}
-          onChange={(e) => setAgreed(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+          onChange={(event) => setAgreed(event.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
         />
         <span className="text-sm text-gray-700">
-          I have read and agree to all terms and conditions of the JobGenius Client Engagement Agreement, including the registration fee, commission terms, extension policy, and termination conditions.
+          I have read and agree to the registration fee, discount terms, commission
+          terms, extension policy, and termination conditions in this agreement.
         </span>
       </label>
 
@@ -112,9 +140,9 @@ export default function ContractStep({
           type="button"
           onClick={handleContinue}
           disabled={!agreed || saving}
-          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {saving ? "Saving…" : "I Agree — Continue"}
+          {saving ? "Saving..." : "I Agree - Continue"}
         </button>
       </div>
     </div>
