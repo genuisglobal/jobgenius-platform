@@ -25,10 +25,6 @@
       "schedule": "17 7 * * *"
     },
     {
-      "path": "/api/cron/work-report-reminders",
-      "schedule": "19 7 * * *"
-    },
-    {
       "path": "/api/cron/drain-notifications",
       "schedule": "20 7 * * *"
     },
