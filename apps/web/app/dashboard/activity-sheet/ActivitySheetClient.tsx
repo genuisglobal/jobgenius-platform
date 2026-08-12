@@ -4,8 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ACTIVITY_METRICS,
   ACTIVITY_METRIC_LABELS,
+  INTERVIEW_METRICS,
   MAX_METRIC_VALUE,
   coerceCount,
+  emptyCounts,
+  interviewTotal,
   normalizeSheetDate,
   rowTotal,
   shiftSheetDate,
@@ -34,9 +37,23 @@ const METRIC_HEADERS: Record<ActivityMetric, string> = {
   easy_applications: "Easy Apply",
   company_applications: "Company",
   follow_ups: "Follow Ups",
-  interviews: "Interviews",
+  phone_interviews: "Phone",
+  ai_interviews: "AI",
+  video_interviews: "Video",
   offers: "Offers",
 };
+
+/**
+ * Two-row header groups. At seven metrics a flat header stops reading as a
+ * spreadsheet, and "Phone / AI / Video" only means anything sitting under
+ * an Interviews banner.
+ */
+const METRIC_GROUPS: Array<{ label: string; metrics: readonly ActivityMetric[] }> = [
+  { label: "Applications", metrics: ["easy_applications", "company_applications"] },
+  { label: "", metrics: ["follow_ups"] },
+  { label: "Interviews", metrics: INTERVIEW_METRICS },
+  { label: "", metrics: ["offers"] },
+];
 
 const RANGE_LABELS: Record<SheetRange, string> = {
   day: "Today",
@@ -45,6 +62,23 @@ const RANGE_LABELS: Record<SheetRange, string> = {
 };
 
 const MEDALS = ["🥇", "🥈", "🥉"];
+
+/**
+ * The leaderboard collapses the three interview types into one figure.
+ * Nine numeric columns is a spreadsheet, not a scoreboard — the type
+ * breakdown lives on the sheet below, where you go to read detail.
+ */
+const LEADERBOARD_COLUMNS: Array<{
+  key: string;
+  label: string;
+  value: (entry: LeaderboardEntry) => number;
+}> = [
+  { key: "easy_applications", label: "Easy Apply", value: (e) => e.counts.easy_applications },
+  { key: "company_applications", label: "Company", value: (e) => e.counts.company_applications },
+  { key: "follow_ups", label: "Follow Ups", value: (e) => e.counts.follow_ups },
+  { key: "interviews", label: "Interviews", value: (e) => e.interviews },
+  { key: "offers", label: "Offers", value: (e) => e.counts.offers },
+];
 
 export default function ActivitySheetClient({
   initialDate,
@@ -111,16 +145,28 @@ export default function ActivitySheetClient({
     [drafts]
   );
 
+  /**
+   * A row's currently-displayed counts, drafts included. Every total on the
+   * page derives from this, so nothing enumerates the metrics by hand.
+   */
+  const liveCounts = useCallback(
+    (row: SheetRow): ActivityCounts => {
+      const counts = emptyCounts();
+      for (const metric of ACTIVITY_METRICS) counts[metric] = cellValue(row, metric);
+      return counts;
+    },
+    [cellValue]
+  );
+
   function editRow(row: SheetRow, patch: Partial<ActivityCounts & { note: string }>) {
     setDrafts((prev) => {
       const current =
         prev[row.job_seeker_id] ??
         ({
-          easy_applications: row.easy_applications,
-          company_applications: row.company_applications,
-          follow_ups: row.follow_ups,
-          interviews: row.interviews,
-          offers: row.offers,
+          ...ACTIVITY_METRICS.reduce(
+            (acc, metric) => ({ ...acc, [metric]: row[metric] }),
+            emptyCounts()
+          ),
           note: row.note ?? "",
         } as ActivityCounts & { note: string });
       return { ...prev, [row.job_seeker_id]: { ...current, ...patch } };
@@ -203,17 +249,8 @@ export default function ActivitySheetClient({
   }, [data]);
 
   const liveDayTotals = useMemo(
-    () =>
-      sumCounts(
-        (data?.rows ?? []).map((row) => ({
-          easy_applications: cellValue(row, "easy_applications"),
-          company_applications: cellValue(row, "company_applications"),
-          follow_ups: cellValue(row, "follow_ups"),
-          interviews: cellValue(row, "interviews"),
-          offers: cellValue(row, "offers"),
-        }))
-      ),
-    [data, cellValue]
+    () => sumCounts((data?.rows ?? []).map(liveCounts)),
+    [data, liveCounts]
   );
 
   const canEdit = (row: SheetRow) =>
@@ -310,9 +347,9 @@ export default function ActivitySheetClient({
                 <tr>
                   <th className="px-4 py-2 text-left font-semibold w-12">#</th>
                   <th className="px-4 py-2 text-left font-semibold">Account Manager</th>
-                  {ACTIVITY_METRICS.map((metric) => (
-                    <th key={metric} className="px-3 py-2 text-right font-semibold">
-                      {METRIC_HEADERS[metric]}
+                  {LEADERBOARD_COLUMNS.map((column) => (
+                    <th key={column.key} className="px-3 py-2 text-right font-semibold">
+                      {column.label}
                     </th>
                   ))}
                   <th className="px-3 py-2 text-right font-semibold">Clients</th>
@@ -336,18 +373,21 @@ export default function ActivitySheetClient({
                           <span className="ml-2 text-xs font-normal text-violet-600">you</span>
                         )}
                       </td>
-                      {ACTIVITY_METRICS.map((metric) => (
-                        <td
-                          key={metric}
-                          className={`px-3 py-2 text-right tabular-nums ${
-                            metric === "offers" && entry.counts.offers > 0
-                              ? "font-semibold text-green-700"
-                              : "text-gray-700"
-                          }`}
-                        >
-                          {entry.counts[metric]}
-                        </td>
-                      ))}
+                      {LEADERBOARD_COLUMNS.map((column) => {
+                        const value = column.value(entry);
+                        return (
+                          <td
+                            key={column.key}
+                            className={`px-3 py-2 text-right tabular-nums ${
+                              column.key === "offers" && value > 0
+                                ? "font-semibold text-green-700"
+                                : "text-gray-700"
+                            }`}
+                          >
+                            {value}
+                          </td>
+                        );
+                      })}
                       <td className="px-3 py-2 text-right tabular-nums text-gray-500">
                         {entry.clients}
                       </td>
@@ -394,27 +434,51 @@ export default function ActivitySheetClient({
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                 <tr>
-                  <th className="px-4 py-2 text-left font-semibold min-w-[180px]">Client</th>
-                  {ACTIVITY_METRICS.map((metric) => (
-                    <th key={metric} className="px-3 py-2 text-right font-semibold w-28">
-                      {METRIC_HEADERS[metric]}
+                  <th
+                    rowSpan={2}
+                    className="px-4 py-2 text-left font-semibold min-w-[180px] align-bottom"
+                  >
+                    Client
+                  </th>
+                  {METRIC_GROUPS.map((group, index) => (
+                    <th
+                      key={group.label || `group-${index}`}
+                      colSpan={group.metrics.length}
+                      className={`px-3 pt-2 text-center font-semibold ${
+                        group.label ? "border-l border-gray-200" : ""
+                      }`}
+                    >
+                      {group.label}
                     </th>
                   ))}
-                  <th className="px-3 py-2 text-right font-semibold w-16">Total</th>
-                  <th className="px-4 py-2 text-left font-semibold min-w-[200px]">Note</th>
+                  <th rowSpan={2} className="px-3 py-2 text-right font-semibold w-16 align-bottom">
+                    Total
+                  </th>
+                  <th
+                    rowSpan={2}
+                    className="px-4 py-2 text-left font-semibold min-w-[200px] align-bottom"
+                  >
+                    Note
+                  </th>
+                </tr>
+                <tr>
+                  {METRIC_GROUPS.flatMap((group) =>
+                    group.metrics.map((metric, index) => (
+                      <th
+                        key={metric}
+                        className={`px-3 pb-2 text-right font-semibold w-24 ${
+                          group.label && index === 0 ? "border-l border-gray-200" : ""
+                        }`}
+                      >
+                        {METRIC_HEADERS[metric]}
+                      </th>
+                    ))
+                  )}
                 </tr>
               </thead>
 
               {groups.map(([amId, group]) => {
-                const groupTotals = sumCounts(
-                  group.rows.map((row) => ({
-                    easy_applications: cellValue(row, "easy_applications"),
-                    company_applications: cellValue(row, "company_applications"),
-                    follow_ups: cellValue(row, "follow_ups"),
-                    interviews: cellValue(row, "interviews"),
-                    offers: cellValue(row, "offers"),
-                  }))
-                );
+                const groupTotals = sumCounts(group.rows.map(liveCounts));
                 const isMine = amId === data?.my_account_manager_id;
 
                 return (
@@ -429,8 +493,9 @@ export default function ActivitySheetClient({
                           <span className="ml-2 text-xs font-normal text-violet-700">you</span>
                         )}
                         <span className="ml-2 text-xs font-normal text-gray-500">
-                          {rowTotal(groupTotals)} activities · {group.rows.length} client
-                          {group.rows.length === 1 ? "" : "s"}
+                          {rowTotal(groupTotals)} activities · {interviewTotal(groupTotals)}{" "}
+                          interview{interviewTotal(groupTotals) === 1 ? "" : "s"} ·{" "}
+                          {group.rows.length} client{group.rows.length === 1 ? "" : "s"}
                         </span>
                       </td>
                     </tr>
@@ -438,13 +503,7 @@ export default function ActivitySheetClient({
                     {group.rows.map((row) => {
                       const editable = canEdit(row);
                       const dirty = Boolean(drafts[row.job_seeker_id]);
-                      const total = rowTotal({
-                        easy_applications: cellValue(row, "easy_applications"),
-                        company_applications: cellValue(row, "company_applications"),
-                        follow_ups: cellValue(row, "follow_ups"),
-                        interviews: cellValue(row, "interviews"),
-                        offers: cellValue(row, "offers"),
-                      });
+                      const total = rowTotal(liveCounts(row));
 
                       return (
                         <tr key={row.job_seeker_id} className="hover:bg-gray-50">

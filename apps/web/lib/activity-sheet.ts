@@ -12,17 +12,34 @@ export const ACTIVITY_METRICS = [
   "easy_applications",
   "company_applications",
   "follow_ups",
-  "interviews",
+  "phone_interviews",
+  "ai_interviews",
+  "video_interviews",
   "offers",
 ] as const;
 
 export type ActivityMetric = (typeof ACTIVITY_METRICS)[number];
 
+/**
+ * The three interview types (migration 114). "Interviews" is never stored
+ * as its own number — it is always the sum of these, so a row's parts and
+ * its total cannot drift apart.
+ */
+export const INTERVIEW_METRICS = [
+  "phone_interviews",
+  "ai_interviews",
+  "video_interviews",
+] as const satisfies readonly ActivityMetric[];
+
+export type InterviewMetric = (typeof INTERVIEW_METRICS)[number];
+
 export const ACTIVITY_METRIC_LABELS: Record<ActivityMetric, string> = {
   easy_applications: "Easy Apply",
   company_applications: "Company Applications",
   follow_ups: "Follow Ups",
-  interviews: "Interviews",
+  phone_interviews: "Phone Call",
+  ai_interviews: "AI Interview",
+  video_interviews: "Video Interview",
   offers: "Offers",
 };
 
@@ -36,7 +53,9 @@ export function emptyCounts(): ActivityCounts {
     easy_applications: 0,
     company_applications: 0,
     follow_ups: 0,
-    interviews: 0,
+    phone_interviews: 0,
+    ai_interviews: 0,
+    video_interviews: 0,
     offers: 0,
   };
 }
@@ -58,6 +77,8 @@ export type LeaderboardEntry = {
   counts: ActivityCounts;
   /** Distinct clients this AM logged anything for in the range. */
   clients: number;
+  /** phone + AI + video, so the board stays readable at seven metrics. */
+  interviews: number;
   total: number;
 };
 
@@ -158,6 +179,11 @@ export function rowTotal(counts: Partial<ActivityCounts>): number {
   return ACTIVITY_METRICS.reduce((sum, metric) => sum + (counts[metric] ?? 0), 0);
 }
 
+/** Combined interviews: phone + AI + video. Never stored — always derived. */
+export function interviewTotal(counts: Partial<ActivityCounts>): number {
+  return INTERVIEW_METRICS.reduce((sum, metric) => sum + (counts[metric] ?? 0), 0);
+}
+
 export function sumCounts(rows: Array<Partial<ActivityCounts>>): ActivityCounts {
   const totals = emptyCounts();
   for (const row of rows) {
@@ -195,13 +221,14 @@ export function buildLeaderboard(rows: SheetRow[]): LeaderboardEntry[] {
         am_name: entry.name,
         counts,
         clients: entry.clients.size,
+        interviews: interviewTotal(counts),
         total: rowTotal(counts),
       };
     })
     .sort(
       (a, b) =>
         b.counts.offers - a.counts.offers ||
-        b.counts.interviews - a.counts.interviews ||
+        b.interviews - a.interviews ||
         b.total - a.total ||
         a.am_name.localeCompare(b.am_name)
     );

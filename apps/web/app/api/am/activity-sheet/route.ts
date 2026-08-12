@@ -12,8 +12,17 @@ import {
   type SheetRow,
 } from "@/lib/activity-sheet";
 
-const ENTRY_COLUMNS =
-  "id, entry_date, job_seeker_id, account_manager_id, easy_applications, company_applications, follow_ups, interviews, offers, note, updated_at";
+// Built from ACTIVITY_METRICS so adding a metric cannot leave the select
+// list behind (as splitting `interviews` in migration 114 nearly did).
+const ENTRY_COLUMNS = [
+  "id",
+  "entry_date",
+  "job_seeker_id",
+  "account_manager_id",
+  ...ACTIVITY_METRICS,
+  "note",
+  "updated_at",
+].join(", ");
 
 type EntryRecord = {
   id: string;
@@ -60,7 +69,9 @@ export async function GET(request: Request) {
       .eq("account_manager_id", auth.user.id),
   ]);
 
-  const records = (entries ?? []) as EntryRecord[];
+  // ENTRY_COLUMNS is built at runtime, so PostgREST's select() cannot infer a
+  // row type from it — hence the widening cast (see CLAUDE.md on Supabase casts).
+  const records = (entries ?? []) as unknown as EntryRecord[];
   const mySeekerIds = Array.from(
     new Set((assignments ?? []).map((a) => a.job_seeker_id as string))
   );

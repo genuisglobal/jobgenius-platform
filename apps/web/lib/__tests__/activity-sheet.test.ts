@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTIVITY_METRICS,
+  INTERVIEW_METRICS,
   buildLeaderboard,
   coerceCount,
   coerceCounts,
   emptyCounts,
   getRangeBounds,
+  interviewTotal,
   normalizeSheetDate,
   rowTotal,
   shiftSheetDate,
@@ -86,41 +89,65 @@ describe("cell input coercion", () => {
 
   it("fills every metric even when the body is partial", () => {
     expect(coerceCounts({ easy_applications: 3, offers: "1" })).toEqual({
+      ...emptyCounts(),
       easy_applications: 3,
-      company_applications: 0,
-      follow_ups: 0,
-      interviews: 0,
       offers: 1,
     });
   });
 });
 
 describe("totals", () => {
-  it("sums a row across all five metrics", () => {
+  it("sums a row across every metric", () => {
     expect(
       rowTotal({
         easy_applications: 17,
         company_applications: 13,
         follow_ups: 1,
-        interviews: 0,
+        phone_interviews: 2,
+        video_interviews: 1,
         offers: 0,
       })
-    ).toBe(31);
+    ).toBe(34);
   });
 
   it("sums rows metric by metric", () => {
     expect(
       sumCounts([
-        { easy_applications: 3, interviews: 1 },
+        { easy_applications: 3, phone_interviews: 1 },
         { easy_applications: 2, offers: 1 },
       ])
     ).toEqual({
+      ...emptyCounts(),
       easy_applications: 5,
-      company_applications: 0,
-      follow_ups: 0,
-      interviews: 1,
+      phone_interviews: 1,
       offers: 1,
     });
+  });
+});
+
+describe("interview types", () => {
+  it("treats interviews as the sum of the three types, never a stored number", () => {
+    expect(ACTIVITY_METRICS).not.toContain("interviews");
+    expect(INTERVIEW_METRICS).toEqual([
+      "phone_interviews",
+      "ai_interviews",
+      "video_interviews",
+    ]);
+    expect(
+      interviewTotal({ phone_interviews: 2, ai_interviews: 1, video_interviews: 3 })
+    ).toBe(6);
+  });
+
+  it("excludes non-interview metrics from the interview total", () => {
+    expect(
+      interviewTotal({ easy_applications: 40, follow_ups: 9, offers: 2, phone_interviews: 1 })
+    ).toBe(1);
+  });
+
+  it("counts every interview type toward a row's grand total", () => {
+    const counts = { phone_interviews: 1, ai_interviews: 1, video_interviews: 1 };
+    expect(rowTotal(counts)).toBe(3);
+    expect(rowTotal(counts)).toBe(interviewTotal(counts));
   });
 });
 
@@ -147,7 +174,7 @@ describe("leaderboard", () => {
     expect(board[1].total).toBe(300);
   });
 
-  it("breaks an offer tie on interviews before volume", () => {
+  it("breaks an offer tie on combined interviews before volume", () => {
     const board = buildLeaderboard([
       makeRow({
         job_seeker_id: "s1",
@@ -161,26 +188,29 @@ describe("leaderboard", () => {
         account_manager_id: "am-b",
         am_name: "B",
         offers: 1,
-        interviews: 2,
+        // Spread across types — the tie-break must not favour one kind.
+        phone_interviews: 1,
+        video_interviews: 1,
         easy_applications: 3,
       }),
     ]);
 
     expect(board.map((entry) => entry.am_name)).toEqual(["B", "A"]);
+    expect(board[0].interviews).toBe(2);
   });
 
   it("aggregates an AM's clients across days and counts only clients with activity", () => {
     const board = buildLeaderboard([
       makeRow({ job_seeker_id: "s1", entry_date: "2026-08-10", easy_applications: 3 }),
       makeRow({ job_seeker_id: "s1", entry_date: "2026-08-11", easy_applications: 4 }),
-      makeRow({ job_seeker_id: "s2", entry_date: "2026-08-11", interviews: 1 }),
+      makeRow({ job_seeker_id: "s2", entry_date: "2026-08-11", ai_interviews: 1 }),
       // A blank row for a third client should not inflate the client count.
       makeRow({ job_seeker_id: "s3", entry_date: "2026-08-11" }),
     ]);
 
     expect(board).toHaveLength(1);
     expect(board[0].counts.easy_applications).toBe(7);
-    expect(board[0].counts.interviews).toBe(1);
+    expect(board[0].interviews).toBe(1);
     expect(board[0].clients).toBe(2);
     expect(board[0].total).toBe(8);
   });
