@@ -6,10 +6,12 @@ import {
   coerceCount,
   coerceCounts,
   emptyCounts,
+  formatScore,
   getRangeBounds,
   interviewTotal,
   normalizeSheetDate,
   rowTotal,
+  scoreCounts,
   shiftSheetDate,
   sumCounts,
   type SheetRow,
@@ -151,15 +153,71 @@ describe("interview types", () => {
   });
 });
 
+describe("scoring", () => {
+  it("weights each metric as configured", () => {
+    expect(scoreCounts({ easy_applications: 10 })).toBe(10);
+    expect(scoreCounts({ company_applications: 10 })).toBe(15);
+    expect(scoreCounts({ follow_ups: 10 })).toBe(10);
+    expect(scoreCounts({ phone_interviews: 10 })).toBe(10);
+    expect(scoreCounts({ ai_interviews: 10 })).toBe(10);
+    expect(scoreCounts({ video_interviews: 10 })).toBe(20);
+    expect(scoreCounts({ offers: 1 })).toBe(100);
+  });
+
+  it("adds the weighted metrics together", () => {
+    // 17 + 13*1.5 + 1 + 2 + 1 + 1*2 + 0 = 17 + 19.5 + 1 + 2 + 1 + 2
+    expect(
+      scoreCounts({
+        easy_applications: 17,
+        company_applications: 13,
+        follow_ups: 1,
+        phone_interviews: 2,
+        ai_interviews: 1,
+        video_interviews: 1,
+        offers: 0,
+      })
+    ).toBe(42.5);
+  });
+
+  it("scores an empty row as zero", () => {
+    expect(scoreCounts(emptyCounts())).toBe(0);
+    expect(scoreCounts({})).toBe(0);
+  });
+
+  it("keeps half-points exact rather than drifting", () => {
+    // Ten company applications at 1.5 must be exactly 15, not 14.999…
+    const counts = { company_applications: 10 };
+    expect(scoreCounts(counts)).toBe(15);
+    expect(Number.isInteger(scoreCounts({ company_applications: 2 }))).toBe(true);
+    expect(scoreCounts({ company_applications: 3 })).toBe(4.5);
+  });
+
+  it("shows the half only when there is one", () => {
+    expect(formatScore(31)).toBe("31");
+    expect(formatScore(31.5)).toBe("31.5");
+    expect(formatScore(0)).toBe("0");
+  });
+
+  it("makes one offer unbeatable by realistic volume", () => {
+    const offer = scoreCounts({ offers: 1 });
+    const heavyDay = scoreCounts({
+      easy_applications: 40,
+      company_applications: 20,
+      follow_ups: 10,
+    });
+    expect(offer).toBeGreaterThan(heavyDay);
+  });
+});
+
 describe("leaderboard", () => {
-  it("ranks outcomes above volume", () => {
+  it("ranks on score, so outcomes beat volume", () => {
     const board = buildLeaderboard([
       makeRow({
         job_seeker_id: "s1",
         account_manager_id: "am-volume",
         am_name: "High Volume",
-        easy_applications: 200,
-        company_applications: 100,
+        easy_applications: 50,
+        company_applications: 20,
       }),
       makeRow({
         job_seeker_id: "s2",
@@ -171,10 +229,35 @@ describe("leaderboard", () => {
     ]);
 
     expect(board.map((entry) => entry.am_name)).toEqual(["One Offer", "High Volume"]);
-    expect(board[1].total).toBe(300);
+    expect(board[0].score).toBe(104);
+    expect(board[1].score).toBe(80); // 50 + 20*1.5
+    expect(board[1].total).toBe(70); // raw count still weights everything equally
   });
 
-  it("breaks an offer tie on combined interviews before volume", () => {
+  it("prefers a video interview over a phone screen at equal volume", () => {
+    const board = buildLeaderboard([
+      makeRow({
+        job_seeker_id: "s1",
+        account_manager_id: "am-phone",
+        am_name: "Phone",
+        phone_interviews: 2,
+      }),
+      makeRow({
+        job_seeker_id: "s2",
+        account_manager_id: "am-video",
+        am_name: "Video",
+        video_interviews: 2,
+      }),
+    ]);
+
+    expect(board.map((entry) => entry.am_name)).toEqual(["Video", "Phone"]);
+    expect(board[0].score).toBe(4);
+    expect(board[1].score).toBe(2);
+    // Same raw activity count — only the weighting separates them.
+    expect(board[0].total).toBe(board[1].total);
+  });
+
+  it("separates two AMs who both landed an offer by their remaining score", () => {
     const board = buildLeaderboard([
       makeRow({
         job_seeker_id: "s1",
@@ -188,15 +271,36 @@ describe("leaderboard", () => {
         account_manager_id: "am-b",
         am_name: "B",
         offers: 1,
-        // Spread across types — the tie-break must not favour one kind.
         phone_interviews: 1,
         video_interviews: 1,
         easy_applications: 3,
       }),
     ]);
 
-    expect(board.map((entry) => entry.am_name)).toEqual(["B", "A"]);
-    expect(board[0].interviews).toBe(2);
+    expect(board.map((entry) => entry.am_name)).toEqual(["A", "B"]);
+    expect(board[0].score).toBe(150);
+    expect(board[1].score).toBe(106);
+    expect(board[1].interviews).toBe(2);
+  });
+
+  it("orders equal scores deterministically by offers then name", () => {
+    const board = buildLeaderboard([
+      makeRow({
+        job_seeker_id: "s1",
+        account_manager_id: "am-z",
+        am_name: "Zoe",
+        easy_applications: 4,
+      }),
+      makeRow({
+        job_seeker_id: "s2",
+        account_manager_id: "am-a",
+        am_name: "Adzo",
+        follow_ups: 4,
+      }),
+    ]);
+
+    expect(board.map((entry) => entry.score)).toEqual([4, 4]);
+    expect(board.map((entry) => entry.am_name)).toEqual(["Adzo", "Zoe"]);
   });
 
   it("aggregates an AM's clients across days and counts only clients with activity", () => {

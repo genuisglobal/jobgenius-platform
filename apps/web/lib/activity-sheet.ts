@@ -46,6 +46,31 @@ export const ACTIVITY_METRIC_LABELS: Record<ActivityMetric, string> = {
 /** Matches the CHECK constraints in migration 113. */
 export const MAX_METRIC_VALUE = 500;
 
+/**
+ * Points per activity. This is the incentive design of the whole sheet —
+ * whatever it rewards is what the team will do more of, so it is deliberate
+ * rather than proportional to effort:
+ *
+ *   - A company application is worth more than an easy apply (1.5 vs 1)
+ *     because it costs real work and converts far better.
+ *   - A video interview outweighs a phone screen or an AI screener (2 vs 1);
+ *     the async ones are cheap to accumulate.
+ *   - An offer is 100 — an order of magnitude above everything else, so no
+ *     amount of volume can out-earn actually placing someone.
+ *
+ * Scores are exact: every weight is an integer or a half, both of which are
+ * exactly representable in binary floating point, so sums never drift.
+ */
+export const METRIC_POINTS: Record<ActivityMetric, number> = {
+  easy_applications: 1,
+  company_applications: 1.5,
+  follow_ups: 1,
+  phone_interviews: 1,
+  ai_interviews: 1,
+  video_interviews: 2,
+  offers: 100,
+};
+
 export type ActivityCounts = Record<ActivityMetric, number>;
 
 export function emptyCounts(): ActivityCounts {
@@ -79,7 +104,10 @@ export type LeaderboardEntry = {
   clients: number;
   /** phone + AI + video, so the board stays readable at seven metrics. */
   interviews: number;
+  /** Raw activity count, every metric weighted equally. */
   total: number;
+  /** Weighted score — what the board actually ranks on. */
+  score: number;
 };
 
 // ─── Dates ───────────────────────────────────────────────────────────────
@@ -184,6 +212,22 @@ export function interviewTotal(counts: Partial<ActivityCounts>): number {
   return INTERVIEW_METRICS.reduce((sum, metric) => sum + (counts[metric] ?? 0), 0);
 }
 
+/** Weighted score for a row or an aggregate. See METRIC_POINTS. */
+export function scoreCounts(counts: Partial<ActivityCounts>): number {
+  return ACTIVITY_METRICS.reduce(
+    (score, metric) => score + (counts[metric] ?? 0) * METRIC_POINTS[metric],
+    0
+  );
+}
+
+/**
+ * Scores are whole numbers unless company applications are involved, so show
+ * the half only when there is one — "31.5" reads as precise, "31.0" as noise.
+ */
+export function formatScore(score: number): string {
+  return Number.isInteger(score) ? String(score) : score.toFixed(1);
+}
+
 export function sumCounts(rows: Array<Partial<ActivityCounts>>): ActivityCounts {
   const totals = emptyCounts();
   for (const row of rows) {
@@ -195,10 +239,10 @@ export function sumCounts(rows: Array<Partial<ActivityCounts>>): ActivityCounts 
 }
 
 /**
- * Leaderboard ranking. Deliberately *not* sorted by raw activity total:
- * that would put an AM who fired off 40 easy applies above one who
- * booked an interview. Outcomes first (offers, then interviews), volume
- * only as the tie-breaker.
+ * Leaderboard ranking, by weighted score (METRIC_POINTS). The weights already
+ * encode "outcomes beat volume" — an offer at 100 points cannot be caught by
+ * any realistic pile of easy applies — so the score is the single ranking
+ * signal, with offers and then name only to keep equal scores deterministic.
  */
 export function buildLeaderboard(rows: SheetRow[]): LeaderboardEntry[] {
   const byAm = new Map<string, { name: string; rows: SheetRow[]; clients: Set<string> }>();
@@ -223,13 +267,13 @@ export function buildLeaderboard(rows: SheetRow[]): LeaderboardEntry[] {
         clients: entry.clients.size,
         interviews: interviewTotal(counts),
         total: rowTotal(counts),
+        score: scoreCounts(counts),
       };
     })
     .sort(
       (a, b) =>
+        b.score - a.score ||
         b.counts.offers - a.counts.offers ||
-        b.interviews - a.interviews ||
-        b.total - a.total ||
         a.am_name.localeCompare(b.am_name)
     );
 }

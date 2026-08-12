@@ -6,11 +6,14 @@ import {
   ACTIVITY_METRIC_LABELS,
   INTERVIEW_METRICS,
   MAX_METRIC_VALUE,
+  METRIC_POINTS,
   coerceCount,
   emptyCounts,
+  formatScore,
   interviewTotal,
   normalizeSheetDate,
   rowTotal,
+  scoreCounts,
   shiftSheetDate,
   sumCounts,
   type ActivityCounts,
@@ -79,6 +82,11 @@ const LEADERBOARD_COLUMNS: Array<{
   { key: "interviews", label: "Interviews", value: (e) => e.interviews },
   { key: "offers", label: "Offers", value: (e) => e.counts.offers },
 ];
+
+/** "Easy Apply 1 · Company 1.5 · … · Offer 100" — the rules, stated plainly. */
+const POINTS_LEGEND = ACTIVITY_METRICS.map(
+  (metric) => `${ACTIVITY_METRIC_LABELS[metric]} ${METRIC_POINTS[metric]}`
+).join(" · ");
 
 export default function ActivitySheetClient({
   initialDate,
@@ -313,9 +321,9 @@ export default function ActivitySheetClient({
           <div>
             <h2 className="font-semibold text-gray-900">Leaderboard</h2>
             <p className="text-xs text-gray-500">
-              Ranked by offers, then interviews — volume only breaks ties.
-              {data && ` ${data.range_start} → ${data.range_end}`}
+              Ranked by score.{data && ` ${data.range_start} → ${data.range_end}`}
             </p>
+            <p className="text-xs text-gray-400 mt-0.5">{POINTS_LEGEND}</p>
           </div>
           <div className="flex gap-1">
             {(["day", "week", "month"] as SheetRange[]).map((option) => (
@@ -353,7 +361,8 @@ export default function ActivitySheetClient({
                     </th>
                   ))}
                   <th className="px-3 py-2 text-right font-semibold">Clients</th>
-                  <th className="px-4 py-2 text-right font-semibold">Total</th>
+                  <th className="px-3 py-2 text-right font-semibold">Total</th>
+                  <th className="px-4 py-2 text-right font-semibold text-violet-700">Score</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -391,8 +400,11 @@ export default function ActivitySheetClient({
                       <td className="px-3 py-2 text-right tabular-nums text-gray-500">
                         {entry.clients}
                       </td>
-                      <td className="px-4 py-2 text-right tabular-nums font-semibold text-gray-900">
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600">
                         {entry.total}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums font-bold text-violet-700">
+                        {formatScore(entry.score)}
                       </td>
                     </tr>
                   );
@@ -415,8 +427,8 @@ export default function ActivitySheetClient({
             })}
           </h2>
           <p className="text-xs text-gray-500">
-            {ACTIVITY_METRICS.map((m) => ACTIVITY_METRIC_LABELS[m]).join(" · ")} — your
-            rows save when you leave a cell.
+            Your rows save when you leave a cell. Point values are on each column
+            header.
           </p>
         </div>
 
@@ -451,8 +463,17 @@ export default function ActivitySheetClient({
                       {group.label}
                     </th>
                   ))}
-                  <th rowSpan={2} className="px-3 py-2 text-right font-semibold w-16 align-bottom">
+                  <th
+                    rowSpan={2}
+                    className="px-3 py-2 text-right font-semibold w-16 align-bottom border-l border-gray-200"
+                  >
                     Total
+                  </th>
+                  <th
+                    rowSpan={2}
+                    className="px-3 py-2 text-right font-semibold w-20 align-bottom text-violet-700"
+                  >
+                    Score
                   </th>
                   <th
                     rowSpan={2}
@@ -466,11 +487,17 @@ export default function ActivitySheetClient({
                     group.metrics.map((metric, index) => (
                       <th
                         key={metric}
+                        title={`${ACTIVITY_METRIC_LABELS[metric]} — ${METRIC_POINTS[metric]} point${
+                          METRIC_POINTS[metric] === 1 ? "" : "s"
+                        } each`}
                         className={`px-3 pb-2 text-right font-semibold w-24 ${
                           group.label && index === 0 ? "border-l border-gray-200" : ""
                         }`}
                       >
                         {METRIC_HEADERS[metric]}
+                        <span className="ml-1 font-normal normal-case text-gray-400">
+                          ×{METRIC_POINTS[metric]}
+                        </span>
                       </th>
                     ))
                   )}
@@ -485,7 +512,7 @@ export default function ActivitySheetClient({
                   <tbody key={amId} className="divide-y divide-gray-100">
                     <tr className={isMine ? "bg-violet-100" : "bg-gray-100"}>
                       <td
-                        colSpan={ACTIVITY_METRICS.length + 3}
+                        colSpan={ACTIVITY_METRICS.length + 4}
                         className="px-4 py-2 font-semibold text-gray-800"
                       >
                         {group.amName}
@@ -497,13 +524,17 @@ export default function ActivitySheetClient({
                           interview{interviewTotal(groupTotals) === 1 ? "" : "s"} ·{" "}
                           {group.rows.length} client{group.rows.length === 1 ? "" : "s"}
                         </span>
+                        <span className="ml-2 text-xs font-bold text-violet-700">
+                          {formatScore(scoreCounts(groupTotals))} pts
+                        </span>
                       </td>
                     </tr>
 
                     {group.rows.map((row) => {
                       const editable = canEdit(row);
                       const dirty = Boolean(drafts[row.job_seeker_id]);
-                      const total = rowTotal(liveCounts(row));
+                      const counts = liveCounts(row);
+                      const total = rowTotal(counts);
 
                       return (
                         <tr key={row.job_seeker_id} className="hover:bg-gray-50">
@@ -541,8 +572,12 @@ export default function ActivitySheetClient({
                             </td>
                           ))}
 
-                          <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-gray-900">
+                          <td className="px-3 py-1.5 text-right tabular-nums text-gray-600 border-l border-gray-200">
                             {total}
+                          </td>
+
+                          <td className="px-3 py-1.5 text-right tabular-nums font-bold text-violet-700">
+                            {formatScore(scoreCounts(counts))}
                           </td>
 
                           <td className="px-2 py-1">
@@ -580,8 +615,11 @@ export default function ActivitySheetClient({
                       {liveDayTotals[metric]}
                     </td>
                   ))}
-                  <td className="px-3 py-2 text-right tabular-nums font-bold text-gray-900">
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-700 border-l border-gray-200">
                     {rowTotal(liveDayTotals)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-bold text-violet-700">
+                    {formatScore(scoreCounts(liveDayTotals))}
                   </td>
                   <td />
                 </tr>
