@@ -9,6 +9,7 @@ import {
   isPeopleManagerRole,
   normalizeAMRole,
 } from "@/lib/auth/roles";
+import AttendanceClock from "./AttendanceClock";
 
 interface NavItem {
   href: string;
@@ -83,6 +84,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     title: "Reporting",
     items: [
       { href: "/dashboard/activity-sheet", label: "Activity Sheet", icon: "chart" },
+      { href: "/dashboard/attendance", label: "Attendance", icon: "clock" },
     ],
   },
   {
@@ -566,6 +568,10 @@ export default function DashboardShell({
           </button>
 
           <div className="flex items-center gap-3 ml-auto">
+            {/* Attendance clock — in the header on every page so signing out
+                never depends on remembering to navigate somewhere. */}
+            <AttendanceClock />
+
             {/* Notification bell */}
             <div ref={bellRef} className="relative">
               <button
