@@ -85,23 +85,45 @@ export async function GET(request: Request) {
     new Set([...records.map((r) => r.account_manager_id), auth.user.id])
   );
 
-  const [{ data: seekers }, { data: managers }] = await Promise.all([
+  const [
+    { data: seekers, error: seekersError },
+    { data: managers, error: managersError },
+  ] = await Promise.all([
     seekerIds.length > 0
       ? supabaseAdmin.from("job_seekers").select("id, full_name, email").in("id", seekerIds)
       : Promise.resolve({ data: [], error: null }),
-    supabaseAdmin.from("account_managers").select("id, full_name, email").in("id", amIds),
+    // account_managers names the column `name`; only job_seekers uses
+    // `full_name`. Selecting the wrong one fails the entire query.
+    supabaseAdmin.from("account_managers").select("id, name, email").in("id", amIds),
   ]);
+
+  // A failed name lookup renders every row as "Unknown", which reads like
+  // missing data rather than a broken query — say so instead of swallowing it.
+  if (seekersError) {
+    console.error("[activity-sheet:get] seeker name lookup failed", seekersError);
+  }
+  if (managersError) {
+    console.error("[activity-sheet:get] AM name lookup failed", managersError);
+  }
+
+  /** Trimmed name, else email, else a marker that something is wrong. */
+  function displayName(primary: unknown, email: unknown, fallback: string): string {
+    const name = typeof primary === "string" ? primary.trim() : "";
+    if (name) return name;
+    const address = typeof email === "string" ? email.trim() : "";
+    return address || fallback;
+  }
 
   const seekerNameById = new Map(
     (seekers ?? []).map((s) => [
       s.id as string,
-      (s.full_name as string | null) || (s.email as string | null) || "Unknown client",
+      displayName(s.full_name, s.email, "Unknown client"),
     ])
   );
   const amNameById = new Map(
     (managers ?? []).map((m) => [
       m.id as string,
-      (m.full_name as string | null) || (m.email as string | null) || "Unknown AM",
+      displayName(m.name, m.email, "Unknown AM"),
     ])
   );
 
