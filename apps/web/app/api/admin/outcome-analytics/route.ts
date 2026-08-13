@@ -54,10 +54,10 @@ export async function GET(request: Request) {
   if (amIds.length > 0) {
     const { data: ams } = await supabaseAdmin
       .from("account_managers")
-      .select("id, full_name, name, email")
+      .select("id, name, email")
       .in("id", amIds);
     const nameById = new Map(
-      (ams ?? []).map((a) => [a.id, a.full_name || a.name || a.email || a.id])
+      (ams ?? []).map((a) => [a.id, a.name || a.email || a.id])
     );
     byAm = summary.by_am.map((s) => ({
       ...s,

@@ -47,7 +47,9 @@ export default async function AnalyticsPage() {
     supabaseAdmin.from("interviews").select("id", { count: "exact", head: true }).gte("scheduled_at", prevMonthStart).lt("scheduled_at", monthStart),
     supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).gte("applied_at", monthStart),
     supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).gte("applied_at", prevMonthStart).lt("applied_at", monthStart),
-    supabaseAdmin.from("account_managers").select("id, full_name, profile_photo_url").eq("status", "active").limit(20),
+    // `name`, not `full_name`; account_managers has no photo column either
+    // (profile_photo_url belongs to job_seekers).
+    supabaseAdmin.from("account_managers").select("id, name").eq("status", "active").limit(20),
     loadAdjacentOperatorAnalytics(),
   ]);
 
@@ -87,8 +89,9 @@ export default async function AnalyticsPage() {
       const placed = placedMap.get(am.id) ?? 0;
       return {
         id: am.id,
-        full_name: am.full_name,
-        photo: am.profile_photo_url ?? null,
+        // Prop stays `full_name` — it is the shape AnalyticsClient consumes.
+        full_name: am.name,
+        photo: null,
         total_seekers: total,
         placed,
         interviews: ivMap.get(am.id) ?? 0,

@@ -44,9 +44,11 @@ type AssignmentRow = {
   account_manager_id: string;
 };
 
+// account_managers stores the display name as `name`; `full_name` is the
+// job_seekers spelling and does not exist on this table.
 type AccountManagerRow = {
   id: string;
-  full_name: string | null;
+  name: string | null;
 };
 
 type QueueRow = {
@@ -320,7 +322,7 @@ export async function loadAdjacentOperatorAnalytics(): Promise<AdjacentOperatorA
   const { data: accountManagerRows, error: amError } = accountManagerIds.length
     ? await supabaseAdmin
         .from("account_managers")
-        .select("id, full_name")
+        .select("id, name")
         .in("id", accountManagerIds)
     : { data: [], error: null };
 
@@ -340,7 +342,7 @@ export async function loadAdjacentOperatorAnalytics(): Promise<AdjacentOperatorA
   }
 
   const accountManagerMap = new Map(
-    ((accountManagerRows ?? []) as AccountManagerRow[]).map((row) => [row.id, row.full_name ?? "Unknown"])
+    ((accountManagerRows ?? []) as AccountManagerRow[]).map((row) => [row.id, row.name ?? "Unknown"])
   );
 
   const queueByPair = new Map<string, QueueSummary>();

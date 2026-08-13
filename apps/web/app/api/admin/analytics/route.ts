@@ -55,7 +55,9 @@ export async function GET(req: NextRequest) {
     // AM leaderboard
     supabaseAdmin
       .from("account_managers")
-      .select("id, full_name, profile_photo_url")
+      // `name`, not `full_name` — and account_managers has no photo column
+      // at all (profile_photo_url belongs to job_seekers).
+      .select("id, name")
       .eq("status", "active")
       .limit(20),
   ]);
@@ -113,8 +115,9 @@ export async function GET(req: NextRequest) {
       const placed = placedMap.get(am.id) ?? 0;
       return {
         id: am.id,
-        full_name: am.full_name,
-        photo: am.profile_photo_url,
+        // Response field stays `full_name` — it is the shape clients consume.
+        full_name: am.name,
+        photo: null,
         total_seekers: total,
         placed,
         interviews: ivMap.get(am.id) ?? 0,

@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   const { data: broadcasts, error } = await supabaseAdmin
     .from("system_announcements")
-    .select("id, subject, body, target_audience, send_email, recipient_count, status, sent_at, created_at, account_managers!inner(full_name, email)")
+    .select("id, subject, body, target_audience, send_email, recipient_count, status, sent_at, created_at, account_managers!inner(name, email)")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -101,13 +101,14 @@ export async function POST(req: NextRequest) {
     targetAudience !== "all_job_seekers"
       ? supabaseAdmin
           .from("account_managers")
-          .select("id, email, full_name")
+          // account_managers spells it `name`; only job_seekers has full_name.
+          .select("id, email, name")
           .eq("status", "active")
       : Promise.resolve({ data: [], error: null }),
   ]);
 
   const seekers = (seekerResult.data ?? []) as { id: string; email: string | null; full_name: string | null }[];
-  const managers = (amResult.data ?? []) as { id: string; email: string | null; full_name: string | null }[];
+  const managers = (amResult.data ?? []) as { id: string; email: string | null; name: string | null }[];
   const recipientCount = seekers.length + managers.length;
 
   // Send emails concurrently (batched to avoid overwhelming the email provider)
@@ -138,7 +139,7 @@ export async function POST(req: NextRequest) {
     for (const am of managers) {
       if (!am.email) continue;
       const tpl = broadcastAnnouncementEmail({
-        recipientName: am.full_name ?? "there",
+        recipientName: am.name ?? "there",
         subject,
         body: messageBody,
         portalUrl: `${appUrl}/dashboard`,

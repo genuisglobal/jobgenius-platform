@@ -77,7 +77,9 @@ export default async function PerformancePage() {
   // Get AM display name
   const { data: amData } = await supabaseAdmin
     .from("account_managers")
-    .select("full_name")
+    // `name`, not full_name — selecting the latter failed the query and
+    // silently fell back to the email address below.
+    .select("name")
     .eq("id", amId)
     .single();
 
@@ -93,7 +95,7 @@ export default async function PerformancePage() {
         applications_all_time: applicationsAllTime ?? 0,
         avg_days_to_first_interview: avgDaysToFirstInterview,
       }}
-      amName={amData?.full_name ?? user.email ?? ""}
+      amName={amData?.name ?? user.email ?? ""}
     />
   );
 }

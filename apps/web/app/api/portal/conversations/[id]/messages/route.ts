@@ -151,7 +151,8 @@ export async function POST(
       Promise.all([
         supabaseAdmin
           .from("account_managers")
-          .select("id, email, full_name")
+          // `name`, not full_name — that spelling is job_seekers only.
+          .select("id, email, name")
           .eq("id", conversation.account_manager_id)
           .single(),
         supabaseAdmin
@@ -164,7 +165,7 @@ export async function POST(
           return notifyAMConversationActivity({
             amId: am.id,
             amEmail: am.email ?? null,
-            amName: am.full_name ?? null,
+            amName: am.name ?? null,
             seekerId: auth.user.id,
             seekerName: seeker?.full_name ?? null,
             subjectLine: conversation.subject,
@@ -302,7 +303,8 @@ export async function PATCH(
     Promise.all([
       supabaseAdmin
         .from("account_managers")
-        .select("id, email, full_name")
+        // `name`, not full_name — that spelling is job_seekers only.
+        .select("id, email, name")
         .eq("id", conversation.account_manager_id)
         .single(),
       supabaseAdmin
@@ -317,7 +319,7 @@ export async function PATCH(
           return notifyAMConversationActivity({
             amId: am.id,
             amEmail: am.email ?? null,
-            amName: am.full_name ?? null,
+            amName: am.name ?? null,
             seekerId: auth.user.id,
             seekerName: seeker?.full_name ?? null,
             subjectLine: conversation.subject,

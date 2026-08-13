@@ -40,10 +40,10 @@ export default async function InterviewConversionPage({
   if (amIds.length > 0) {
     const { data: ams } = await supabaseAdmin
       .from("account_managers")
-      .select("id, full_name, name, email")
+      .select("id, name, email")
       .in("id", amIds);
     for (const a of ams ?? []) {
-      amNames[a.id] = a.full_name || a.name || a.email || a.id;
+      amNames[a.id] = a.name || a.email || a.id;
     }
   }
 

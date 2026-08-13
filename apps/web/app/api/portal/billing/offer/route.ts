@@ -77,7 +77,8 @@ export async function POST(request: Request) {
   if (assignment?.account_manager_id) {
     const { data: am } = await supabaseAdmin
       .from("account_managers")
-      .select("email, full_name")
+      // account_managers spells it `name`; only job_seekers has full_name.
+      .select("email, name")
       .eq("id", assignment.account_manager_id)
       .single();
 
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
         to: am.email,
         subject: `Job Offer Reported: ${seeker?.full_name ?? "Client"} at ${company}`,
         html: `
-          <p>Hello ${am.full_name},</p>
+          <p>Hello ${am.name},</p>
           <p><strong>${seeker?.full_name ?? "Your client"}</strong> has reported a job offer:</p>
           <ul>
             <li><strong>Company:</strong> ${company}</li>

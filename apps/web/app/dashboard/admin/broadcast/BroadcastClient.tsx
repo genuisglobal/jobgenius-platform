@@ -256,7 +256,7 @@ export default function BroadcastClient({
           ) : (
             <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
               {broadcasts.map((b) => {
-                const am = b.account_managers as { full_name: string | null } | null;
+                const am = b.account_managers as { name: string | null } | null;
                 const isExpanded = expandedId === b.id;
                 return (
                   <div key={b.id} className="p-4">
@@ -287,7 +287,7 @@ export default function BroadcastClient({
                             {b.subject}
                           </p>
                           <p className="text-xs text-gray-400 mt-0.5">
-                            Sent by {am?.full_name ?? "Unknown"} ·{" "}
+                            Sent by {am?.name ?? "Unknown"} ·{" "}
                             {formatDate(b.sent_at ?? b.created_at)} ·{" "}
                             {b.recipient_count.toLocaleString()} recipient
                             {b.recipient_count !== 1 ? "s" : ""}
