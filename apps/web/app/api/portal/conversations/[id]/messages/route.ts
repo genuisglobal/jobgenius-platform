@@ -41,12 +41,16 @@ export async function GET(
   }
 
   // Mark AM messages as read
-  await supabaseAdmin
+  const { error: markReadError } = await supabaseAdmin
     .from("conversation_messages")
     .update({ read_at: new Date().toISOString() })
     .eq("conversation_id", params.id)
     .eq("sender_type", "account_manager")
     .is("read_at", null);
+
+  if (markReadError) {
+    console.error("[portal:conversations] failed to mark messages read:", markReadError);
+  }
 
   return Response.json({ messages: messages ?? [] });
 }
@@ -103,10 +107,14 @@ export async function POST(
   }
 
   // Update conversation updated_at
-  await supabaseAdmin
+  const { error: convUpdateError } = await supabaseAdmin
     .from("conversations")
     .update({ updated_at: new Date().toISOString() })
     .eq("id", params.id);
+
+  if (convUpdateError) {
+    console.error("[portal:conversations] failed to update conversation timestamp:", convUpdateError);
+  }
 
   // Run side-effects in parallel (fire-and-forget)
   const sideEffects: Promise<unknown>[] = [];
@@ -143,7 +151,8 @@ export async function POST(
       Promise.all([
         supabaseAdmin
           .from("account_managers")
-          .select("id, email, full_name")
+          // `name`, not full_name — that spelling is job_seekers only.
+          .select("id, email, name")
           .eq("id", conversation.account_manager_id)
           .single(),
         supabaseAdmin
@@ -156,7 +165,7 @@ export async function POST(
           return notifyAMConversationActivity({
             amId: am.id,
             amEmail: am.email ?? null,
-            amName: am.full_name ?? null,
+            amName: am.name ?? null,
             seekerId: auth.user.id,
             seekerName: seeker?.full_name ?? null,
             subjectLine: conversation.subject,
@@ -277,10 +286,14 @@ export async function PATCH(
     statusMessage = insertedStatusMessage ?? null;
   }
 
-  await supabaseAdmin
+  const { error: patchConvError } = await supabaseAdmin
     .from("conversations")
     .update({ updated_at: nowIso })
     .eq("id", params.id);
+
+  if (patchConvError) {
+    console.error("[portal:conversations] failed to update conversation timestamp:", patchConvError);
+  }
 
   // Notify AM about task status change (fire-and-forget)
   if (
@@ -290,7 +303,8 @@ export async function PATCH(
     Promise.all([
       supabaseAdmin
         .from("account_managers")
-        .select("id, email, full_name")
+        // `name`, not full_name — that spelling is job_seekers only.
+        .select("id, email, name")
         .eq("id", conversation.account_manager_id)
         .single(),
       supabaseAdmin
@@ -305,7 +319,7 @@ export async function PATCH(
           return notifyAMConversationActivity({
             amId: am.id,
             amEmail: am.email ?? null,
-            amName: am.full_name ?? null,
+            amName: am.name ?? null,
             seekerId: auth.user.id,
             seekerName: seeker?.full_name ?? null,
             subjectLine: conversation.subject,
@@ -316,7 +330,7 @@ export async function PATCH(
           });
         }
       })
-      .catch(() => {});
+      .catch((err) => console.error("[conversations:messages] notification failed:", err));
   }
 
   return Response.json({

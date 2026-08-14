@@ -1,4 +1,4 @@
-import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
+import { requireAMAccessToSeeker } from "@/lib/am-access";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type MarkPayload = {
@@ -48,22 +48,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const amResult = await getAccountManagerFromRequest(request.headers);
-  if ("error" in amResult) {
-    return Response.json({ success: false, error: amResult.error }, { status: 401 });
-  }
-
-  const hasAccess = await hasJobSeekerAccess(
-    amResult.accountManager.id,
-    run.job_seeker_id
-  );
-
-  if (!hasAccess) {
-    return Response.json(
-      { success: false, error: "Not authorized for this job seeker." },
-      { status: 403 }
-    );
-  }
+  const access = await requireAMAccessToSeeker(request.headers, run.job_seeker_id);
+  if (!access.ok) return access.response;
 
   const { error } = await supabaseServer
     .from("application_runs")
@@ -81,27 +67,39 @@ export async function POST(request: Request) {
     );
   }
 
-  await supabaseServer.from("application_step_events").insert({
+  const { error: stepError } = await supabaseServer.from("application_step_events").insert({
     run_id: run.id,
     step: run.current_step,
     event_type: "STEP_FAILED",
     message: payload.note ?? `Marked ${payload.status}.`,
   });
 
+  if (stepError) {
+    console.error("[apply:mark] failed to insert step event:", stepError);
+  }
+
   if (run.queue_id) {
     const category = "failed";
-    await supabaseServer
+    const { error: queueError } = await supabaseServer
       .from("application_queue")
       .update({ status: payload.status, category, updated_at: nowIso })
       .eq("id", run.queue_id);
 
-    await supabaseServer
+    if (queueError) {
+      console.error("[apply:mark] failed to update queue status:", queueError);
+    }
+
+    const { error: attentionError } = await supabaseServer
       .from("attention_items")
       .update({
         status: payload.status === "CANCELLED" ? "DISMISSED" : "RESOLVED",
         resolved_at: nowIso,
       })
       .eq("queue_id", run.queue_id);
+
+    if (attentionError) {
+      console.error("[apply:mark] failed to update attention items:", attentionError);
+    }
   }
 
   return Response.json({ success: true });

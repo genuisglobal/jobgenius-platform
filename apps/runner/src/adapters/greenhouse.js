@@ -51,6 +51,12 @@ export const greenhouseAdapter = {
   },
   async confirm(page) {
     const text = (await page.textContent("body"))?.toLowerCase() ?? "";
-    return text.includes("thank you") || text.includes("application submitted");
+    return (
+      text.includes("thank you") ||
+      text.includes("application submitted") ||
+      text.includes("thanks for applying") ||
+      text.includes("application received") ||
+      text.includes("we have received your application")
+    );
   },
 };

@@ -65,7 +65,7 @@ export default function ContactTable({ contacts: initialContacts }: ContactTable
             onClick={() => setTypeFilter(f)}
             className={`px-3 py-1.5 text-sm rounded-full border transition ${
               typeFilter === f
-                ? "bg-blue-600 text-white border-blue-600"
+                ? "bg-violet-600 text-white border-violet-600"
                 : "border-gray-300 text-gray-600 hover:bg-gray-50"
             }`}
           >
@@ -118,7 +118,7 @@ export default function ContactTable({ contacts: initialContacts }: ContactTable
                         href={contact.linkedin_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-500 text-xs hover:underline"
+                        className="text-violet-500 text-xs hover:underline"
                       >
                         LinkedIn
                       </a>
@@ -134,7 +134,7 @@ export default function ContactTable({ contacts: initialContacts }: ContactTable
                     {contact.email ? (
                       <a
                         href={`mailto:${contact.email}`}
-                        className="text-blue-600 hover:underline"
+                        className="text-violet-600 hover:underline"
                       >
                         {contact.email}
                       </a>
@@ -165,7 +165,7 @@ export default function ContactTable({ contacts: initialContacts }: ContactTable
                   </td>
                   <td className="px-4 py-3">
                     {contact.pending_match_count > 0 ? (
-                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                      <span className="px-2 py-0.5 bg-violet-100 text-violet-700 rounded-full text-xs font-medium">
                         {contact.pending_match_count} pending
                       </span>
                     ) : (
@@ -182,7 +182,7 @@ export default function ContactTable({ contacts: initialContacts }: ContactTable
                     <div className="flex items-center gap-3">
                       <Link
                         href={`/dashboard/network/${contact.id}`}
-                        className="text-xs text-blue-600 hover:text-blue-800 transition"
+                        className="text-xs text-violet-600 hover:text-violet-800 transition"
                       >
                         View
                       </Link>

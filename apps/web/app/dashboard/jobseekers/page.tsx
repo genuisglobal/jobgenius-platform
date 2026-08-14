@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
+import { isManualQueueCategory } from "@/lib/queue-categories";
 import { supabaseServer } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -142,7 +143,7 @@ export default async function JobSeekersPage() {
   for (const queueItem of queueItems ?? []) {
     const counts = countsBySeeker.get(queueItem.job_seeker_id);
     if (!counts) continue;
-    if (queueItem.category === "manual") {
+    if (isManualQueueCategory(queueItem.category)) {
       counts.manual += 1;
     }
   }

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, supabaseAdmin } from "@/lib/auth";
+import { AM_ROLE_VALUES } from "@/lib/auth/roles";
 
 /**
  * POST /api/admin/accounts
- * Create a new account manager account
+ * Create a new internal staff account
  */
 export async function POST(request: Request) {
   const auth = await requireAdmin(request);
@@ -31,9 +32,9 @@ export async function POST(request: Request) {
     }
 
     // Validate role
-    const validRoles = ["am", "admin", "superadmin"];
+    const validRoles = [...AM_ROLE_VALUES];
     const targetRole = role || "am";
-    if (!validRoles.includes(targetRole)) {
+    if (!validRoles.some((validRole) => validRole === targetRole)) {
       return NextResponse.json(
         { error: "Invalid role." },
         { status: 400 }
@@ -48,14 +49,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if email already exists
-    const { data: existing } = await supabaseAdmin
+    // Reuse an archived staff profile when the email already exists without a linked auth user.
+    const { data: existing, error: existingError } = await supabaseAdmin
       .from("account_managers")
-      .select("id")
+      .select("id, auth_id")
       .eq("email", email)
       .maybeSingle();
 
-    if (existing) {
+    if (existingError) {
+      return NextResponse.json(
+        { error: existingError.message },
+        { status: 500 }
+      );
+    }
+
+    if (existing?.auth_id) {
       return NextResponse.json(
         { error: "An account with this email already exists." },
         { status: 409 }
@@ -80,16 +88,28 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create account manager record (auto-approved when created by admin)
-    const { data: am, error: amError } = await supabaseAdmin
-      .from("account_managers")
-      .insert({
-        email,
-        name: name || null,
-        auth_id: authData.user.id,
-        role: targetRole,
-        status: "approved", // Auto-approve accounts created by admins
-      })
+    // Create or reactivate the account manager record (auto-approved when created by admin)
+    const amMutation = existing
+      ? supabaseAdmin
+          .from("account_managers")
+          .update({
+            name: name || null,
+            auth_id: authData.user.id,
+            role: targetRole,
+            status: "approved",
+          })
+          .eq("id", existing.id)
+      : supabaseAdmin
+          .from("account_managers")
+          .insert({
+            email,
+            name: name || null,
+            auth_id: authData.user.id,
+            role: targetRole,
+            status: "approved", // Auto-approve accounts created by admins
+          });
+
+    const { data: am, error: amError } = await amMutation
       .select()
       .single();
 
@@ -128,10 +148,17 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { data: accountManagers, error } = await supabaseAdmin
+    const { searchParams } = new URL(request.url);
+    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") ?? "25", 10) || 25));
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    const { data: accountManagers, error, count } = await supabaseAdmin
       .from("account_managers")
-      .select("id, email, name, role, created_at, last_login_at")
-      .order("name", { ascending: true });
+      .select("id, email, name, role, created_at, last_login_at", { count: "exact" })
+      .order("name", { ascending: true })
+      .range(from, to);
 
     if (error) {
       return NextResponse.json(
@@ -140,7 +167,15 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json(accountManagers || []);
+    return NextResponse.json({
+      data: accountManagers ?? [],
+      pagination: {
+        page,
+        pageSize,
+        total: count ?? 0,
+        totalPages: Math.ceil((count ?? 0) / pageSize),
+      },
+    });
   } catch (error) {
     console.error("Error listing accounts:", error);
     return NextResponse.json(

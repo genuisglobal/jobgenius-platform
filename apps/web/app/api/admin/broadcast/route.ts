@@ -3,6 +3,7 @@ import { requireAdmin, supabaseAdmin } from "@/lib/auth";
 import { normalizeAMRole } from "@/lib/auth/roles";
 import { sendAndLogEmail } from "@/lib/messaging/send-and-log";
 import { broadcastAnnouncementEmail } from "@/lib/email-templates/broadcast-announcement";
+import { logAdminAction } from "@/lib/audit";
 
 type TargetAudience = "all_job_seekers" | "all_account_managers" | "all_users";
 
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   const { data: broadcasts, error } = await supabaseAdmin
     .from("system_announcements")
-    .select("id, subject, body, target_audience, send_email, recipient_count, status, sent_at, created_at, account_managers!inner(full_name, email)")
+    .select("id, subject, body, target_audience, send_email, recipient_count, status, sent_at, created_at, account_managers!inner(name, email)")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -100,13 +101,14 @@ export async function POST(req: NextRequest) {
     targetAudience !== "all_job_seekers"
       ? supabaseAdmin
           .from("account_managers")
-          .select("id, email, full_name")
+          // account_managers spells it `name`; only job_seekers has full_name.
+          .select("id, email, name")
           .eq("status", "active")
       : Promise.resolve({ data: [], error: null }),
   ]);
 
   const seekers = (seekerResult.data ?? []) as { id: string; email: string | null; full_name: string | null }[];
-  const managers = (amResult.data ?? []) as { id: string; email: string | null; full_name: string | null }[];
+  const managers = (amResult.data ?? []) as { id: string; email: string | null; name: string | null }[];
   const recipientCount = seekers.length + managers.length;
 
   // Send emails concurrently (batched to avoid overwhelming the email provider)
@@ -130,14 +132,14 @@ export async function POST(req: NextRequest) {
           template_key: "broadcast_announcement",
           job_seeker_id: seeker.id,
           meta: { announcement_id: announcementId, target_audience: targetAudience },
-        }).catch(() => null)
+        }).catch((err) => { console.error("[broadcast] send seeker email failed:", err); return null; })
       );
     }
 
     for (const am of managers) {
       if (!am.email) continue;
       const tpl = broadcastAnnouncementEmail({
-        recipientName: am.full_name ?? "there",
+        recipientName: am.name ?? "there",
         subject,
         body: messageBody,
         portalUrl: `${appUrl}/dashboard`,
@@ -150,7 +152,7 @@ export async function POST(req: NextRequest) {
           text: tpl.text,
           template_key: "broadcast_announcement",
           meta: { announcement_id: announcementId, target_audience: targetAudience, am_id: am.id },
-        }).catch(() => null)
+        }).catch((err) => { console.error("[broadcast] send AM email failed:", err); return null; })
       );
     }
 
@@ -158,7 +160,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Update announcement status to 'sent'
-  await supabaseAdmin
+  const { error: statusUpdateError } = await supabaseAdmin
     .from("system_announcements")
     .update({
       status: "sent",
@@ -166,6 +168,19 @@ export async function POST(req: NextRequest) {
       sent_at: new Date().toISOString(),
     })
     .eq("id", announcementId);
+
+  if (statusUpdateError) {
+    console.error("[broadcast] failed to update announcement status to sent:", statusUpdateError);
+  }
+
+  logAdminAction({
+    adminId: auth.user.id,
+    adminEmail: auth.user.email,
+    action: "broadcast.send",
+    targetType: "system_announcement",
+    targetId: announcementId,
+    details: { subject, target_audience: targetAudience, recipient_count: recipientCount, send_email: sendEmail },
+  }).catch((e) => console.error("Audit log failed", e));
 
   return NextResponse.json(
     {

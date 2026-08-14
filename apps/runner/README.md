@@ -1,63 +1,115 @@
-# JobGenius Cloud Runner (Phase 5.1)
+# JobGenius Playwright Runner
 
 ## Overview
-Long-running Playwright worker that polls the JobGenius API for runs and executes ATS steps in the cloud.
+Minimal Playwright worker that polls JobGenius for application work, opens a browser, fills Greenhouse forms, uploads a resume, submits the application, and reports status back to the API.
+
+The worker prefers the newer task contract:
+- `POST /api/apply/tasks/claim`
+- `POST /api/apply/runs/start`
+
+If those routes are not present, it falls back to the current monorepo apply lifecycle:
+- `GET /api/apply/next-global`
+- `POST /api/apply/start`
+- `POST /api/apply/event`
+- `POST /api/apply/complete`
+- `POST /api/apply/pause`
 
 ## Environment
-- `JOBGENIUS_API_BASE_URL` (required)
-- `RUNNER_AUTH_TOKEN` (required, used for API auth)
-- `RUNNER_DEFAULT_EMAIL` (optional, fallback email for ATS forms)
-- `RUNNER_ID` (optional)
-- `RUNNER_POLL_INTERVAL_MS` (default 60000)
-- `RUNNER_CONCURRENCY` (default 5)
-- `STORAGE_STATE_PATH` (optional, default `apps/runner/.state`)
-- `STATE_ENCRYPTION_KEY` (required in production; optional in dev)
-- `JOBSEEKER_MAX_PER_HOUR` (default 8)
-- `RUNNER_WATCHDOG_TIMEOUT_MS` (default 600000)
-- `RUNNER_WATCHDOG_CHECK_MS` (default 30000)
-- `RUNNER_CIRCUIT_WINDOW_MS` (default 1800000)
-- `RUNNER_CIRCUIT_COOLDOWN_MS` (default 1800000)
-- `RUNNER_CAPTCHA_THRESHOLD` (default 3)
-- `RUNNER_OTP_SMS_THRESHOLD` (default 3)
-- `RUNNER_REQUIRED_FIELDS_THRESHOLD` (default 5)
-- `RUNNER_METRICS_INTERVAL_MS` (default 60000)
-- `RUNNER_DRY_RUN` (default false)
-- `OPS_API_KEY` (optional, enables heartbeats)
-- `DISCOVERY_AGENT_ENABLED` (default false; set true to auto-run discovery polling in this runner process)
-- `DISCOVERY_POLL_INTERVAL_MS` (default 300000)
-- `DISCOVERY_MAX_CONCURRENT` (default 2)
-- `DISCOVERY_MAX_PAGES` (default 5)
-- `DISCOVERY_MAX_JOBS` (default 50)
+- `API_BASE_URL` required
+- `RUNNER_AUTH_TOKEN` required
+- `RUNNER_ID` optional
+- `RUNNER_POLL_INTERVAL_MS` default `5000`
+- `PLAYWRIGHT_HEADLESS` default `true`
+- `PLAYWRIGHT_SUBMIT_ENABLED` default `false`
+- `PLAYWRIGHT_SLOW_MO_MS` optional
+- `PLAYWRIGHT_NAVIGATION_TIMEOUT_MS` default `45000`
+- `PLAYWRIGHT_ACTION_TIMEOUT_MS` default `15000`
+- `VERIFY_GREENHOUSE_URL` optional helper for `npm run prepare:greenhouse`
+- `VERIFY_JOB_SEEKER_ID` optional helper override for `npm run prepare:greenhouse`
+- `VERIFY_AUTO_START` default `true` for `npm run prepare:greenhouse`
 
-## Local run
+Backward-compatible aliases are also supported:
+- `JOBGENIUS_API_BASE_URL`
+- `JOBGENIUS_API_KEY`
+
+Backend requirements for runner auth:
+- `RUNNER_AUTH_TOKEN` must be set in `apps/web`
+- `RUNNER_AM_EMAIL` must be set in `apps/web`
+- the runner bearer token must exactly match the backend `RUNNER_AUTH_TOKEN`
+
+## Local Run
 ```bash
+cd apps/runner
 npm install
-npm run start
+npx playwright install
+npm run check:auth
+npm start
 ```
 
-## Encryption
-- Storage state is persisted per jobseeker in `.state/{jobSeekerId}.json.enc` when `STATE_ENCRYPTION_KEY` is set.
-- Encryption uses AES-256-GCM and only decrypts in memory at runtime.
-- Key formats:
-  - `base64:<key>` for base64-encoded 32 bytes
-  - 64-char hex string for 32-byte keys
-  - Any other string is SHA-256 hashed into a 32-byte key
+## Current Scope
+- Greenhouse adapter only
+- Fills `input`, `textarea`, and `select`
+- Uploads resume files when an upload field is present
+- Pauses runs clearly when required fields remain, resume upload fails, submit is missing, or confirmation cannot be detected
+- Skips clicking submit unless `PLAYWRIGHT_SUBMIT_ENABLED=true`
 
-## Rate limits
-- `JOBSEEKER_MAX_PER_HOUR` enforces max completed applications per jobseeker per hour (default 8).
-- When exceeded, the run is paused with reason `RATE_LIMIT_JOBSEEKER`.
+## Real Greenhouse Verification
+Use a real public Greenhouse application URL to create a deterministic verification task for the runner's assigned seeker.
 
-## Circuit breakers
-- Rolling 30-minute window per ATS for `CAPTCHA`, `OTP_SMS`, and `REQUIRED_FIELDS`.
-- If thresholds are exceeded, the breaker opens for `RUNNER_CIRCUIT_COOLDOWN_MS`.
-- Newly claimed runs for that ATS are paused with reason `ATS_DEGRADED`.
+```bash
+cd apps/runner
+npm run prepare:greenhouse -- "https://boards.greenhouse.io/<company>/jobs/<job-id>"
+npm start
+```
 
-## Metrics
-- Runner emits structured summary logs every 60s (configurable via `RUNNER_METRICS_INTERVAL_MS`).
-- Fields include: claimed, completed, paused by reason, active runs, and avg step duration per ATS.
-- Grafana/Prometheus note: use log-based metrics (e.g., Promtail/Loki or CloudWatch metric filters) to scrape `step=METRICS` logs, or add a sidecar log exporter if you want Prometheus scraping.
+Notes:
+- Stop any other background runner process first, or it may claim the task before your foreground run does.
+- The helper saves the job, queues it, and creates or retries a run.
+- Leave `PLAYWRIGHT_SUBMIT_ENABLED` unset or `false` for a safe pre-submit verification.
+- Set `PLAYWRIGHT_SUBMIT_ENABLED=true` only when you want the runner to attempt a real submission.
 
-## Troubleshooting
-- If you see plaintext `.json` files, confirm `STATE_ENCRYPTION_KEY` is set.
-- `CIRCUIT_BREAKER_OPEN` logs indicate ATS degradation; reduce concurrency or pause that ATS.
-- Repeated `WATCHDOG_TIMEOUT` events suggest stuck runs or slow ATS; check network/timeouts.
+## Two entrypoints (IMPORTANT)
+
+- `npm start` → `index.js` → **worker.js**: the legacy worker Fly currently
+  runs. Greenhouse only; any other ATS pauses `UNSUPPORTED_ATS`.
+- `npm run start:engine` → **src/index.js**: the full engine stack — all
+  adapters (LinkedIn, Greenhouse, Lever, SmartRecruiters, hosted ATSes,
+  deep Workday), storage-state reuse, screening-answer classify, captcha
+  service, failure screenshots, watchdog, circuit breakers, per-seeker
+  hourly caps.
+
+The Workday support below lives in the engine stack. To serve Workday runs
+in production, switch the Fly process to `npm run start:engine` (after a
+staging soak) or run a second machine with that command.
+
+## Workday deep adapter (src/adapters/workday.js)
+
+Workday requires an account per (seeker, tenant). The adapter:
+1. Clicks Apply → "Apply Manually" (deterministic; skips resume-parse).
+2. On the tenant auth wall, fetches per-tenant credentials from
+   `POST /api/apply/ats-account` (created on first use: email = seeker
+   email so Workday's verification codes flow through the existing
+   `/api/otp` pipeline; password generated + stored AES-256-GCM-encrypted
+   under `ATS_ACCOUNT_ENCRYPTION_KEY` — set it on BOTH the web app and
+   runner environments' API). Signs in, or creates the account, with one
+   crossover attempt; on hard failure marks the row LOGIN_FAILED and
+   pauses `REAUTH_REQUIRED`.
+3. Fills via stable `data-automation-id`s first (legalNameSection_*,
+   addressSection_*, phone-number), then the generic hint pass, then
+   deterministic listboxes (country/state/phone type) via the ARIA
+   combobox driver. Remaining dropdowns are reported by
+   `extractRequiredFields` as `combobox` fields and answered by the
+   classify step (fillClassifiedFields now drives ARIA widgets too).
+4. Advances the wizard via `bottom-navigation-next-button`, capturing a
+   per-page screenshot before each Next, and pauses with the exact
+   Workday error-banner text when validation rejects the page.
+5. Confirms only on Workday success copy with no wizard Next button left.
+
+### Staging verification (acceptance: 3 real postings E2E)
+1. Set `ATS_ACCOUNT_ENCRYPTION_KEY` (web + confirm `/api/apply/ats-account`
+   returns credentials for a test seeker) and run migration 105.
+2. Queue 3 public `*.myworkdayjobs.com` postings for a test seeker.
+3. `RUNNER_DRY_RUN=1 npm run start:engine` first — expect runs to pause
+   `DRY_RUN_CONFIRM_SUBMIT` on the Review page with per-step screenshots
+   in the run timeline; then rerun without dry-run to submit.
+4. Success rate appears per-ATS in /dashboard/admin/adapter-health.

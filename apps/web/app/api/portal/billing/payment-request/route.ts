@@ -8,7 +8,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { method, installmentId, offerId, note } = body as {
     method: string;
     installmentId?: string;
@@ -52,7 +57,8 @@ export async function POST(request: Request) {
   // Notify super admins
   const { data: admins } = await supabaseAdmin
     .from("account_managers")
-    .select("email, full_name")
+    // account_managers spells it `name`; only job_seekers has full_name.
+    .select("email, name")
     .in("role", ["admin", "superadmin"]);
 
   if (admins && admins.length > 0) {
@@ -65,7 +71,7 @@ export async function POST(request: Request) {
           to: admin.email,
           subject: `Payment Request: ${seekerName} — ${methodLabel}`,
           html: `
-            <p>Hello ${admin.full_name},</p>
+            <p>Hello ${admin.name},</p>
             <p><strong>${seekerName}</strong> has requested payment details via <strong>${methodLabel}</strong>.</p>
             <p>Please log in to the admin dashboard to send the payment details.</p>
             <p><a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/billing">View in Dashboard →</a></p>

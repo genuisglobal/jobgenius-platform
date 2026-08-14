@@ -6,6 +6,7 @@ import { sendAndLogEmail } from "@/lib/messaging/send-and-log";
 import { interviewInviteEmail } from "@/lib/email-templates/interview-invite";
 import { interviewConfirmedEmail } from "@/lib/email-templates/interview-confirmed";
 import { buildIcsEvent, icsToDataUri } from "@/lib/interviews/ics-builder";
+import { logActivity } from "@/lib/feedback-loop";
 
 type CreatePayload = {
   application_queue_id?: string;
@@ -96,6 +97,16 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+
+  // Log to activity feed (non-blocking)
+  logActivity(body.job_seeker_id, {
+    eventType: "interview_scheduled",
+    title: "Interview scheduled",
+    description: `${body.interview_type ?? "Video"} interview${body.scheduled_at ? ` on ${new Date(body.scheduled_at).toLocaleDateString()}` : " — awaiting candidate confirmation"}`,
+    meta: { interview_id: interview.id, job_post_id: body.job_post_id, type: body.interview_type },
+    refType: "interviews",
+    refId: interview.id,
+  }).catch((err) => console.error("[interviews] activity log failed:", err));
 
   // Insert slot offers if slot_ids provided
   if (hasSlots && body.slot_ids) {

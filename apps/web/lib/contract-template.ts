@@ -7,6 +7,11 @@ export interface ContractParams {
   seekerEmail: string;
   planType: "essentials" | "premium";
   registrationFee: number;
+  baseRegistrationFee?: number;
+  discountAmount?: number;
+  discountPercent?: number;
+  discountCode?: string | null;
+  discountLabel?: string | null;
   commissionRate: number; // 0.05
   agreedDate: string; // ISO date string
   installmentPlan?: {
@@ -21,6 +26,11 @@ export function generateContractHTML(params: ContractParams): string {
     seekerEmail,
     planType,
     registrationFee,
+    baseRegistrationFee,
+    discountAmount,
+    discountPercent,
+    discountCode,
+    discountLabel,
     commissionRate,
     agreedDate,
     installmentPlan,
@@ -32,11 +42,55 @@ export function generateContractHTML(params: ContractParams): string {
     style: "currency",
     currency: "USD",
   });
+  const baseFeeValue =
+    typeof baseRegistrationFee === "number" && baseRegistrationFee > 0
+      ? baseRegistrationFee
+      : registrationFee;
+  const baseFeeFormatted = baseFeeValue.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+  });
+  const discountValue =
+    typeof discountAmount === "number" && discountAmount > 0 ? discountAmount : 0;
+  const discountFormatted = discountValue.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+  });
+  const discountPercentLabel =
+    typeof discountPercent === "number" && discountPercent > 0
+      ? `${Math.round(discountPercent * 100)}%`
+      : null;
   const dateFormatted = new Date(agreedDate).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
   });
+  const hasDiscount = discountValue > 0 && baseFeeValue > registrationFee;
+  const discountLineItems = hasDiscount
+    ? `
+      <tr>
+        <td style="padding:6px 12px;border:1px solid #e5e7eb;">Base registration fee</td>
+        <td style="padding:6px 12px;border:1px solid #e5e7eb;">${baseFeeFormatted}</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 12px;border:1px solid #e5e7eb;">Discount${
+          discountLabel ? ` (${discountLabel})` : ""
+        }${discountCode ? ` - ${discountCode}` : ""}</td>
+        <td style="padding:6px 12px;border:1px solid #e5e7eb;">-${discountFormatted}${
+          discountPercentLabel ? ` (${discountPercentLabel})` : ""
+        }</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 12px;border:1px solid #e5e7eb;"><strong>Registration fee due</strong></td>
+        <td style="padding:6px 12px;border:1px solid #e5e7eb;"><strong>${feeFormatted}</strong></td>
+      </tr>
+    `
+    : `
+      <tr>
+        <td style="padding:6px 12px;border:1px solid #e5e7eb;"><strong>Registration fee due</strong></td>
+        <td style="padding:6px 12px;border:1px solid #e5e7eb;"><strong>${feeFormatted}</strong></td>
+      </tr>
+    `;
 
   const installmentRows =
     installmentPlan && installmentPlan.installments.length > 0
@@ -50,7 +104,7 @@ export function generateContractHTML(params: ContractParams): string {
               </tr>`
           )
           .join("")
-      : `<tr><td colspan="3" style="padding:6px 12px;border:1px solid #e5e7eb;">Single payment of ${feeFormatted}</td></tr>`;
+      : `<tr><td colspan="3" style="padding:6px 12px;border:1px solid #e5e7eb;">One-time payment of ${feeFormatted}</td></tr>`;
 
   const essentialsFeatures = `
     <ul>
@@ -121,7 +175,18 @@ export function generateContractHTML(params: ContractParams): string {
   <p>Services begin only after the first registration payment has been received and acknowledged by JobGenius. JobGenius will use commercially reasonable efforts to find suitable employment opportunities for the Client but does not guarantee job placement.</p>
 
   <h2>3. Registration Fee</h2>
-  <p>Client agrees to pay a non-refundable registration fee of <strong>${feeFormatted}</strong> under the following schedule:</p>
+  <p>Client agrees to pay the following non-refundable registration fee under the selected plan:</p>
+  <table>
+    <tbody>
+      ${discountLineItems}
+    </tbody>
+  </table>
+  ${
+    hasDiscount
+      ? `<p>This agreement reflects an approved signup discount that applies only to the registration fee and does not change the 5% placement commission.</p>`
+      : ""
+  }
+  <p>Payment will be made under the following schedule:</p>
   <table>
     <thead>
       <tr><th>Installment</th><th>Proposed Date</th><th>Amount</th></tr>
@@ -137,14 +202,14 @@ export function generateContractHTML(params: ContractParams): string {
   <h2>4. Commission Terms</h2>
   <p>Upon Client's acceptance of a job offer facilitated or supported by JobGenius, the Client agrees to pay a placement commission of <strong>${commissionPercent}% of the first year's base salary</strong>.</p>
   <ul>
-    <li>Commission is due within <strong>60 days</strong> of the offer acceptance date.</li>
+    <li>Commission is due within <strong>90 days</strong> of the offer acceptance date.</li>
     <li>Client must report the job offer through the JobGenius portal within 5 business days of acceptance.</li>
     <li>Commission applies to the base salary only (excluding bonuses, equity, or other compensation).</li>
     <li>Commission is owed regardless of employment duration, provided the position was facilitated or referred by JobGenius.</li>
   </ul>
 
   <h2>5. Extension Policy</h2>
-  <p>If the Client is unable to pay the commission within the 60-day window due to documented financial hardship, the Client may request a <strong>one-time 30-day extension</strong> through the portal prior to the due date.</p>
+  <p>If the Client is unable to pay the commission within the 90-day window due to documented financial hardship, the Client may request a <strong>one-time 30-day extension</strong> through the portal prior to the due date.</p>
   <ul>
     <li>Extension requests must be submitted at least 5 days before the commission due date.</li>
     <li>Only one extension is permitted per placement.</li>

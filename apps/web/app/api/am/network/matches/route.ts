@@ -23,6 +23,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ matches: [] });
   }
 
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") ?? "25", 10) || 25));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
   let query = supabaseAdmin
     .from("network_contact_matches")
     .select(`
@@ -31,21 +36,30 @@ export async function GET(request: Request) {
       network_contacts (id, full_name, contact_type, company_name, email),
       job_posts (id, title, company, url),
       job_seekers (id, full_name, email)
-    `)
+    `, { count: "exact" })
     .in("network_contact_id", contactIds)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range(from, to);
 
   if (statusFilter !== "all") {
     query = query.eq("status", statusFilter);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
 
   if (error) {
     return NextResponse.json({ error: "Failed to load matches." }, { status: 500 });
   }
 
-  return NextResponse.json({ matches: data || [] });
+  return NextResponse.json({
+    matches: data || [],
+    pagination: {
+      page,
+      pageSize,
+      total: count ?? 0,
+      totalPages: Math.ceil((count ?? 0) / pageSize),
+    },
+  });
 }
 
 // PUT: Update match status

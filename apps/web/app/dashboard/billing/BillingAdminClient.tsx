@@ -97,7 +97,7 @@ const STATUS_COLORS: Record<string, string> = {
   screenshot_uploaded: "bg-indigo-100 text-indigo-800",
   acknowledged: "bg-green-100 text-green-800",
   reported: "bg-gray-100 text-gray-700",
-  confirmed: "bg-blue-100 text-blue-700",
+  confirmed: "bg-violet-100 text-violet-700",
   accepted: "bg-green-100 text-green-800",
   approved: "bg-green-100 text-green-800",
   rejected: "bg-red-100 text-red-800",
@@ -239,12 +239,20 @@ export default function BillingAdminClient({
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Billing</h1>
-        <a
-          href="/dashboard/billing/settings"
-          className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          Payment Settings
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href="/dashboard/billing/settings/promo-codes"
+            className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Promo Codes
+          </a>
+          <a
+            href="/dashboard/billing/settings"
+            className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Payment Settings
+          </a>
+        </div>
       </div>
 
       {/* Stats row */}
@@ -258,7 +266,7 @@ export default function BillingAdminClient({
           <p className="text-xs text-gray-500">Unreviewed Screenshots</p>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
-          <p className="text-2xl font-bold text-blue-600">
+          <p className="text-2xl font-bold text-violet-600">
             {offers.filter((o) => o.status !== "accepted").length}
           </p>
           <p className="text-xs text-gray-500">Offers Pending Confirm</p>
@@ -450,7 +458,7 @@ export default function BillingAdminClient({
                 onClick={() => setActiveTab(tab)}
                 className={`relative px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab
-                    ? "border-blue-600 text-blue-600"
+                    ? "border-violet-600 text-violet-600"
                     : "border-transparent text-gray-500 hover:text-gray-700"
                 }`}
               >
@@ -498,7 +506,7 @@ export default function BillingAdminClient({
                         callApi("/api/admin/billing/payment-details", { paymentRequestId: req.id })
                       }
                       disabled={loading === "/api/admin/billing/payment-details"}
-                      className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+                      className="text-xs px-3 py-1.5 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors disabled:opacity-50"
                     >
                       Send Details
                     </button>

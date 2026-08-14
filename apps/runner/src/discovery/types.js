@@ -9,6 +9,7 @@
  * @property {boolean} requires_auth
  * @property {Object} auth_config
  * @property {Object} [adapter_config]
+ * @property {Object} [discovery_config]
  * @property {SourceSelectors | Object} selectors
  */
 
@@ -68,6 +69,7 @@
  * @property {number} jobs_updated
  * @property {number} pages_scraped
  * @property {string} [error_message]
+ * @property {Object} [metadata]
  * @property {DiscoveredJob[]} jobs
  */
 
@@ -77,6 +79,8 @@
  * @property {number} maxJobs - Maximum jobs to collect
  * @property {number} scrollDelay - Delay between scrolls (ms)
  * @property {number} pageTimeout - Page load timeout (ms)
+ * @property {number} maxZeroYieldPages - Stop after N pages with zero new jobs
+ * @property {number} maxDescriptionFetches - Max job detail pages to open
  * @property {boolean} headless - Run browser headless
  * @property {boolean} fetchDescriptions - Also fetch full job descriptions
  * @property {string} [userAgent] - Custom user agent
@@ -88,7 +92,8 @@
  * @property {string|string[]} [keywords]
  * @property {string} [location]
  * @property {string} [category]
- * @property {string} [company] - For ATS feed adapters (greenhouse, lever, ashby)
+ * @property {string} [company] - For ATS feed adapters (greenhouse, lever, ashby, smartrecruiters) or Workday tenant/site hints
+ * @property {string} [careerUrl] - Public company career URL for ATS feed adapters
  * @property {string} [level]
  * @property {number} [maxJobs]
  * @property {number} [page]

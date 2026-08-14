@@ -227,7 +227,7 @@ export default function AssignmentsClient({
             <div className="flex gap-2">
               <button
                 onClick={selectAllUnassigned}
-                className="text-xs text-blue-600 hover:text-blue-800"
+                className="text-xs text-violet-600 hover:text-violet-800"
               >
                 Select All
               </button>

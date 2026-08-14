@@ -14,18 +14,24 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const typeFilter = searchParams.get("type");
 
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") ?? "25", 10) || 25));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
   let query = supabaseAdmin
     .from("network_contacts")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("account_manager_id", auth.user.id)
     .neq("status", "inactive")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range(from, to);
 
   if (typeFilter === "recruiter" || typeFilter === "referral") {
     query = query.eq("contact_type", typeFilter);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
 
   if (error) {
     return NextResponse.json({ error: "Failed to load contacts." }, { status: 500 });
@@ -54,7 +60,15 @@ export async function GET(request: Request) {
     pending_match_count: matchCounts[c.id] || 0,
   }));
 
-  return NextResponse.json({ contacts });
+  return NextResponse.json({
+    contacts,
+    pagination: {
+      page,
+      pageSize,
+      total: count ?? 0,
+      totalPages: Math.ceil((count ?? 0) / pageSize),
+    },
+  });
 }
 
 // POST: Create a new network contact

@@ -1,5 +1,6 @@
-import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
+import { requireAMAccessToSeeker } from "@/lib/am-access";
 import { getActorFromHeaders } from "@/lib/actor";
+import { isActiveClient } from "@/lib/intake";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type ResumePayload = {
@@ -39,20 +40,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const amResult = await getAccountManagerFromRequest(request.headers);
-  if ("error" in amResult) {
-    return Response.json({ success: false, error: amResult.error }, { status: 401 });
-  }
+  const access = await requireAMAccessToSeeker(request.headers, run.job_seeker_id);
+  if (!access.ok) return access.response;
 
-  const hasAccess = await hasJobSeekerAccess(
-    amResult.accountManager.id,
-    run.job_seeker_id
-  );
-
-  if (!hasAccess) {
+  if (!(await isActiveClient(run.job_seeker_id))) {
     return Response.json(
-      { success: false, error: "Not authorized for this job seeker." },
-      { status: 403 }
+      {
+        success: false,
+        error: "Live applications are only allowed for active clients.",
+      },
+      { status: 409 }
     );
   }
 
@@ -80,14 +77,18 @@ export async function POST(request: Request) {
     );
   }
 
-  await supabaseServer.from("application_step_events").insert({
+  const { error: stepError } = await supabaseServer.from("application_step_events").insert({
     run_id: run.id,
     step: run.current_step,
     event_type: "RESUMED",
     message: payload.note ?? "Resumed by AM.",
   });
 
-  await supabaseServer.from("apply_run_events").insert({
+  if (stepError) {
+    console.error("[apply:resume] failed to insert step event:", stepError);
+  }
+
+  const { error: runEventError } = await supabaseServer.from("apply_run_events").insert({
     run_id: run.id,
     level: "INFO",
     event_type: "RESUMED",
@@ -95,16 +96,29 @@ export async function POST(request: Request) {
     payload: { note: payload.note ?? null },
   });
 
+  if (runEventError) {
+    console.error("[apply:resume] failed to insert run event:", runEventError);
+  }
+
   if (run.queue_id) {
-    await supabaseServer
+    const { error: queueError } = await supabaseServer
       .from("application_queue")
       .update({ status: "READY", category: "in_progress", updated_at: nowIso })
       .eq("id", run.queue_id);
 
-    await supabaseServer
+    if (queueError) {
+      console.error("[apply:resume] failed to update queue status:", queueError);
+    }
+
+    const { error: attentionError } = await supabaseServer
       .from("attention_items")
       .update({ status: "RESOLVED", resolved_at: nowIso })
-      .eq("queue_id", run.queue_id);
+      .eq("queue_id", run.queue_id)
+      .eq("status", "OPEN");
+
+    if (attentionError) {
+      console.error("[apply:resume] failed to update attention items:", attentionError);
+    }
   }
 
   return Response.json({

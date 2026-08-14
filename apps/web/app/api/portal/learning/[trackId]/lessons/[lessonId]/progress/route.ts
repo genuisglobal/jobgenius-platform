@@ -1,5 +1,6 @@
 import { requireJobSeeker } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/auth";
+import { computeReviewSchedule } from "@/lib/learning/assessment";
 
 export async function PATCH(
   request: Request,
@@ -13,7 +14,7 @@ export async function PATCH(
   // Verify lesson belongs to seeker's published track
   const { data: lesson } = await supabaseAdmin
     .from("learning_lessons")
-    .select("id, track_id")
+    .select("id, track_id, content_type")
     .eq("id", params.lessonId)
     .eq("track_id", params.trackId)
     .single();
@@ -43,6 +44,14 @@ export async function PATCH(
 
   const validStatuses = ["not_started", "in_progress", "completed"];
   const newStatus = validStatuses.includes(body.status ?? "") ? body.status : undefined;
+  const isQuizLesson = lesson.content_type === "quiz";
+
+  if (isQuizLesson && newStatus === "completed" && body.quiz_score === undefined) {
+    return Response.json(
+      { error: "Quiz lessons require a quiz_score before they can be completed." },
+      { status: 400 }
+    );
+  }
 
   // Check for existing progress
   const { data: existing } = await supabaseAdmin
@@ -62,7 +71,24 @@ export async function PATCH(
     if (body.time_spent_seconds !== undefined) {
       updates.time_spent_seconds = (existing.time_spent_seconds ?? 0) + body.time_spent_seconds;
     }
-    if (body.quiz_score !== undefined) updates.quiz_score = body.quiz_score;
+    if (body.quiz_score !== undefined) {
+      const review = computeReviewSchedule(body.quiz_score, existing.review_stage ?? 0, new Date(now));
+      updates.quiz_score = body.quiz_score;
+      updates.mastery_score = review.masteryScore;
+      updates.attempt_count = (existing.attempt_count ?? 0) + 1;
+      if (!existing.started_at) updates.started_at = now;
+      updates.last_assessed_at = now;
+      updates.review_stage = review.reviewStage;
+      updates.next_review_at = review.nextReviewAt;
+
+      if (body.quiz_score >= 70) {
+        updates.status = "completed";
+        updates.completed_at = now;
+      } else if (isQuizLesson) {
+        updates.status = "in_progress";
+        updates.completed_at = null;
+      }
+    }
 
     const { data: progress, error } = await supabaseAdmin
       .from("learning_progress")
@@ -78,17 +104,39 @@ export async function PATCH(
     return Response.json({ progress });
   }
 
+  const review =
+    body.quiz_score !== undefined
+      ? computeReviewSchedule(body.quiz_score, 0, new Date(now))
+      : null;
+
   // Create new progress record
   const { data: progress, error } = await supabaseAdmin
     .from("learning_progress")
     .insert({
       job_seeker_id: auth.user.id,
       lesson_id: params.lessonId,
-      status: newStatus ?? "in_progress",
+      status:
+        body.quiz_score !== undefined && isQuizLesson
+          ? body.quiz_score >= 70
+            ? "completed"
+            : "in_progress"
+          : newStatus ?? "in_progress",
       started_at: now,
-      completed_at: newStatus === "completed" ? now : null,
+      completed_at:
+        body.quiz_score !== undefined && isQuizLesson
+          ? body.quiz_score >= 70
+            ? now
+            : null
+          : newStatus === "completed"
+          ? now
+          : null,
       time_spent_seconds: body.time_spent_seconds ?? 0,
       quiz_score: body.quiz_score ?? null,
+      mastery_score: review?.masteryScore ?? 0,
+      attempt_count: body.quiz_score !== undefined ? 1 : 0,
+      last_assessed_at: body.quiz_score !== undefined ? now : null,
+      review_stage: review?.reviewStage ?? 0,
+      next_review_at: review?.nextReviewAt ?? null,
     })
     .select("*")
     .single();

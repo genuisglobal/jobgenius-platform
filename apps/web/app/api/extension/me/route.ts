@@ -89,6 +89,9 @@ export async function GET(request: Request) {
       },
       active_job_seeker: activeSeeker,
       expires_at: session.expires_at,
+      // Minimum supported extension version; the popup shows an update banner
+      // when the installed version is older. Set EXTENSION_MIN_VERSION to roll.
+      min_extension_version: process.env.EXTENSION_MIN_VERSION ?? null,
     });
   } catch (error) {
     console.error("Extension me error:", error);

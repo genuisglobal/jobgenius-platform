@@ -46,7 +46,7 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 const MATCH_STATUS_BADGE: Record<string, string> = {
-  pending: "bg-blue-100 text-blue-700",
+  pending: "bg-violet-100 text-violet-700",
   contacted: "bg-yellow-100 text-yellow-700",
   responded: "bg-green-100 text-green-700",
   dismissed: "bg-gray-100 text-gray-500",
@@ -179,7 +179,7 @@ export default function ContactDetailClient({
               {contact.email && (
                 <div>
                   <span className="text-gray-400 text-xs uppercase tracking-wide block">Email</span>
-                  <a href={`mailto:${contact.email}`} className="text-blue-600 hover:underline">
+                  <a href={`mailto:${contact.email}`} className="text-violet-600 hover:underline">
                     {contact.email}
                   </a>
                 </div>
@@ -197,7 +197,7 @@ export default function ContactDetailClient({
                     href={contact.linkedin_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline truncate block"
+                    className="text-violet-600 hover:underline truncate block"
                   >
                     {contact.linkedin_url}
                   </a>
@@ -276,7 +276,7 @@ export default function ContactDetailClient({
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === "matches" && pendingCount > 0 && (
-              <span className="ml-2 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+              <span className="ml-2 px-2 py-0.5 text-xs bg-violet-100 text-violet-700 rounded-full">
                 {pendingCount} pending
               </span>
             )}
@@ -330,7 +330,7 @@ export default function ContactDetailClient({
                           href={match.job_posts.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-blue-500 hover:underline"
+                          className="text-xs text-violet-500 hover:underline"
                         >
                           View job
                         </a>
@@ -354,7 +354,7 @@ export default function ContactDetailClient({
             <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
               {activity.map((item) => (
                 <div key={item.id} className="px-5 py-3 flex items-start gap-3">
-                  <div className="w-2 h-2 rounded-full bg-blue-400 mt-1.5 flex-shrink-0" />
+                  <div className="w-2 h-2 rounded-full bg-violet-400 mt-1.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-800 font-medium">
                       {ACTIVITY_LABELS[item.activity_type] ?? item.activity_type}

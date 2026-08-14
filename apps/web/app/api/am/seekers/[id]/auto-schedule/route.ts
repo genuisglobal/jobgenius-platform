@@ -78,13 +78,23 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     const slotDow = weekdayMap[weekdayPart];
     if (slotDow === undefined) return false;
 
-    const slotTimeMinutes = parseInt(hourPart) * 60 + parseInt(minutePart);
+    const hours = parseInt(hourPart, 10);
+    const minutes = parseInt(minutePart, 10);
+    if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return false;
+
+    const slotTimeMinutes = hours * 60 + minutes;
     const slotEndMinutes = slotTimeMinutes + (slot.duration_min || 60);
 
     return availability.some((avail) => {
       if (avail.day_of_week !== slotDow) return false;
-      const [aH, aM] = avail.start_time.split(":").map(Number);
-      const [eH, eM] = avail.end_time.split(":").map(Number);
+      const aParts = (avail.start_time ?? "").split(":");
+      const eParts = (avail.end_time ?? "").split(":");
+      if (aParts.length < 2 || eParts.length < 2) return false;
+      const aH = parseInt(aParts[0], 10);
+      const aM = parseInt(aParts[1], 10);
+      const eH = parseInt(eParts[0], 10);
+      const eM = parseInt(eParts[1], 10);
+      if ([aH, aM, eH, eM].some((v) => isNaN(v))) return false;
       const availStart = aH * 60 + aM;
       const availEnd = eH * 60 + eM;
       // Slot must fit within availability window
@@ -115,7 +125,12 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
-  const body = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { slot_id, interview_type = "video_call", notes_for_candidate, job_post_id } = body;
 
   if (!slot_id) {
@@ -159,10 +174,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   // Mark slot booked
-  await supabaseAdmin
+  const { error: slotError } = await supabaseAdmin
     .from("interview_slots")
     .update({ is_booked: true })
     .eq("id", slot_id);
+
+  if (slotError) {
+    console.error("[am:auto-schedule] failed to mark slot as booked:", slotError);
+  }
 
   return NextResponse.json({ interview }, { status: 201 });
 }

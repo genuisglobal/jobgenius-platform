@@ -52,7 +52,13 @@ export async function GET(request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: "Access denied." }, { status: 403 });
   }
 
-  const { data, error } = await supabaseAdmin
+  const { searchParams } = new URL(request.url);
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") ?? "25", 10) || 25));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const { data, error, count } = await supabaseAdmin
     .from("conversations")
     .select(`
       id,
@@ -65,9 +71,10 @@ export async function GET(request: Request, { params }: RouteParams) {
       account_managers ( name, email ),
       job_posts ( title, company ),
       conversation_messages ( id, content, sender_type, read_at, created_at, attachments )
-    `)
+    `, { count: "exact" })
     .eq("job_seeker_id", seekerId)
-    .order("updated_at", { ascending: false });
+    .order("updated_at", { ascending: false })
+    .range(from, to);
 
   if (error) {
     return NextResponse.json(
@@ -139,7 +146,15 @@ export async function GET(request: Request, { params }: RouteParams) {
     };
   });
 
-  return NextResponse.json({ conversations });
+  return NextResponse.json({
+    conversations,
+    pagination: {
+      page,
+      pageSize,
+      total: count ?? 0,
+      totalPages: Math.ceil((count ?? 0) / pageSize),
+    },
+  });
 }
 
 export async function POST(request: Request, { params }: RouteParams) {

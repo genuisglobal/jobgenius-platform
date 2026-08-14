@@ -16,6 +16,8 @@ import type {
   ScoringWeights,
   DEFAULT_WEIGHTS,
 } from "./types";
+import { hierarchicalSkillMatch } from "./skill-hierarchy";
+import { computeResumeBonus } from "./resume-extractor";
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -28,6 +30,60 @@ function normalizeString(str: string): string {
 function normalizeArray(arr: string[] | null | undefined): string[] {
   if (!arr) return [];
   return arr.map(normalizeString).filter((s) => s.length > 0);
+}
+
+function normalizeLocationText(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/\((?:remote|hybrid|on[- ]?site|onsite|in[- ]office|in office)[^)]*\)/g, " ")
+    .replace(/\bremote(?: only| within [a-z\s]+)?\b/g, " ")
+    .replace(/\bhybrid\b/g, " ")
+    .replace(/\bon[- ]?site\b|\bonsite\b|\bin[- ]office\b|\bin office\b/g, " ")
+    .replace(/\bnew york city\b|\bnyc\b/g, "new york")
+    .replace(/\bwashington,\s*d\.?c\.?\b|\bwashington d\.?c\.?\b/g, "washington dc")
+    .replace(/\bu\.?s\.?a?\.?\b/g, "united states")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeLocation(value: string) {
+  return value.split(" ").filter((token) => token.length >= 2);
+}
+
+function locationsRoughlyMatch(left: string | null | undefined, right: string | null | undefined) {
+  const leftNormalized = normalizeLocationText(left);
+  const rightNormalized = normalizeLocationText(right);
+
+  if (!leftNormalized || !rightNormalized) {
+    return false;
+  }
+
+  if (leftNormalized === rightNormalized) {
+    return true;
+  }
+
+  if (
+    leftNormalized.includes(rightNormalized) ||
+    rightNormalized.includes(leftNormalized)
+  ) {
+    return true;
+  }
+
+  const leftTokens = tokenizeLocation(leftNormalized);
+  const rightTokens = new Set(tokenizeLocation(rightNormalized));
+  if (leftTokens.length === 0 || rightTokens.size === 0) {
+    return false;
+  }
+
+  let overlap = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / Math.min(leftTokens.length, rightTokens.size) >= 0.75;
 }
 
 const TITLE_STOP_WORDS = new Set([
@@ -74,13 +130,111 @@ const TITLE_TOKEN_NORMALIZATIONS: Record<string, string> = {
   cyber: "security",
   infosec: "security",
   secops: "security",
+  sde: "software",
+  swe: "software",
+  dev: "developer",
+  backenddeveloper: "back-end",
+  backendengineer: "back-end",
+  frontenddeveloper: "front-end",
+  frontendengineer: "front-end",
+  fullstackdeveloper: "full-stack",
+  fullstackengineer: "full-stack",
+  sitereliability: "sre",
   frontend: "front-end",
   frontendend: "front-end",
   backend: "back-end",
   fullstack: "full-stack",
   productowner: "product",
   presales: "pre-sales",
+  bizops: "operations",
+  bizdev: "sales",
+  bi: "analytics",
+  qa: "quality",
 };
+
+const TITLE_ALIAS_GROUPS: Array<[string, string[]]> = [
+  [
+    "software_engineering",
+    [
+      "software engineer",
+      "software developer",
+      "application engineer",
+      "application developer",
+      "sde",
+      "swe",
+    ],
+  ],
+  [
+    "backend_engineering",
+    [
+      "backend engineer",
+      "backend developer",
+      "back-end engineer",
+      "back-end developer",
+      "api engineer",
+      "api developer",
+      "server engineer",
+      "server developer",
+    ],
+  ],
+  [
+    "frontend_engineering",
+    [
+      "frontend engineer",
+      "frontend developer",
+      "front-end engineer",
+      "front-end developer",
+      "web engineer",
+      "web developer",
+      "ui engineer",
+    ],
+  ],
+  [
+    "full_stack_engineering",
+    [
+      "full stack engineer",
+      "full stack developer",
+      "full-stack engineer",
+      "full-stack developer",
+    ],
+  ],
+  [
+    "platform_devops",
+    [
+      "platform engineer",
+      "devops engineer",
+      "site reliability engineer",
+      "sre",
+      "cloud engineer",
+      "infrastructure engineer",
+      "systems engineer",
+    ],
+  ],
+  [
+    "data_analytics",
+    [
+      "data analyst",
+      "business intelligence analyst",
+      "bi analyst",
+      "analytics analyst",
+      "reporting analyst",
+      "insights analyst",
+    ],
+  ],
+  [
+    "product_management",
+    ["product manager", "product owner", "technical product manager"],
+  ],
+  [
+    "customer_success",
+    [
+      "customer success manager",
+      "client success manager",
+      "account manager",
+      "customer account manager",
+    ],
+  ],
+];
 
 type TitleAlignment = {
   exact: boolean;
@@ -106,6 +260,35 @@ function tokenizeTitle(title: string): string[] {
     .filter((token) => token.length > 0 && !TITLE_STOP_WORDS.has(token));
 }
 
+function normalizeTitlePhrase(title: string): string {
+  return normalizeString(title)
+    .replace(/[^a-z0-9+#/ -]+/g, " ")
+    .replace(/\bfront end\b/g, "front-end")
+    .replace(/\bback end\b/g, "back-end")
+    .replace(/\bfull stack\b/g, "full-stack")
+    .replace(/\bsite reliability engineer\b/g, "sre")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function detectTitleAliasGroups(title: string): Set<string> {
+  const normalized = normalizeTitlePhrase(title);
+  const groups = new Set<string>();
+
+  for (const [group, aliases] of TITLE_ALIAS_GROUPS) {
+    if (
+      aliases.some((alias) => {
+        const normalizedAlias = normalizeTitlePhrase(alias);
+        return normalized === normalizedAlias || normalized.includes(normalizedAlias);
+      })
+    ) {
+      groups.add(group);
+    }
+  }
+
+  return groups;
+}
+
 function detectTitleFamilies(title: string): Set<string> {
   const normalizedTitle = normalizeString(title);
   const tokens = tokenizeTitle(title);
@@ -124,6 +307,22 @@ function detectTitleFamilies(title: string): Set<string> {
     [
       "data",
       ["data", "analytics", "bi", "reporting", "insights", "machinelearning", "ml"],
+    ],
+    [
+      "database",
+      ["database", "dba", "sql", "etl", "datawarehouse", "ssis", "ssrs", "mssql", "mysql", "postgres", "oracle", "nosql", "mongodb"],
+    ],
+    [
+      "infrastructure",
+      ["cloud", "infrastructure", "network", "system", "sysadmin", "devops", "sre", "platform", "linux", "windows", "aws", "azure", "gcp"],
+    ],
+    [
+      "healthcare",
+      ["nurse", "nursing", "clinical", "medical", "health", "pharmacy", "therapist", "physician", "dental"],
+    ],
+    [
+      "legal",
+      ["legal", "lawyer", "attorney", "paralegal", "compliance", "regulatory", "counsel"],
     ],
     [
       "product",
@@ -172,6 +371,36 @@ function detectTitleFamilies(title: string): Set<string> {
   return families;
 }
 
+/**
+ * Detect if a target entry looks like a skill/technology rather than a job title.
+ * Single-token entries that are common tech keywords are treated as skills.
+ * These still contribute to family detection but should not drive partial matching.
+ */
+function isSkillLikeEntry(entry: string): boolean {
+  const rawWords = normalizeString(entry)
+    .replace(/[^a-z0-9+#/ -]+/g, " ")
+    .split(/[\s/()-]+/)
+    .filter((token) => token.length > 0);
+  // Multi-word entries are likely job titles (e.g. "Database Administrator")
+  if (rawWords.length >= 2) return false;
+  const tokens = tokenizeTitle(entry);
+  // Single token — check if it's a known technology/skill keyword
+  const skillKeywords = new Set([
+    "sql", "mssql", "mysql", "postgres", "postgresql", "oracle", "nosql", "mongodb",
+    "ssis", "ssrs", "ssas", "etl", "python", "java", "javascript", "typescript",
+    "react", "angular", "vue", "node", "golang", "ruby", "rust", "swift", "kotlin",
+    "aws", "azure", "gcp", "docker", "kubernetes", "terraform", "ansible",
+    "linux", "windows", "macos", "excel", "tableau", "powerbi",
+    "salesforce", "sap", "jira", "confluence", "git", "github",
+    "html", "css", "php", "c#", "c++", ".net", "spring",
+    "redis", "kafka", "elasticsearch", "graphql", "rest",
+    "microsoft", "google", "apple", "meta", "amazon",
+    "agile", "scrum", "kanban", "cicd", "ci/cd",
+  ]);
+  const normalized = tokens[0] || normalizeString(entry).replace(/[^a-z0-9+#]+/g, "");
+  return skillKeywords.has(normalized);
+}
+
 function analyzeTitleAlignment(
   targetTitles: string[] | null | undefined,
   rawJobTitle: string
@@ -180,14 +409,39 @@ function analyzeTitleAlignment(
   const jobTitle = normalizeString(rawJobTitle);
   const jobTokens = new Set(tokenizeTitle(rawJobTitle));
   const jobFamilies = detectTitleFamilies(rawJobTitle);
+  const jobAliasGroups = detectTitleAliasGroups(rawJobTitle);
 
   const matchedTitles: string[] = [];
   const partialMatches: string[] = [];
   let bestTokenOverlap = 0;
   const sharedFamilies = new Set<string>();
 
+  // Separate actual title entries from skill-like entries
+  const titleEntries: string[] = [];
+  const skillEntries: string[] = [];
   for (const target of normalizedTargets) {
-    if (jobTitle.includes(target)) {
+    if (isSkillLikeEntry(target)) {
+      skillEntries.push(target);
+    } else {
+      titleEntries.push(target);
+    }
+  }
+
+  // Skill entries still contribute to family detection
+  for (const skill of skillEntries) {
+    const skillFamilies = detectTitleFamilies(skill);
+    for (const family of Array.from(skillFamilies)) {
+      if (jobFamilies.has(family)) {
+        sharedFamilies.add(family);
+      }
+    }
+  }
+
+  // Title entries drive exact/partial matching
+  for (const target of titleEntries) {
+    const normalizedTarget = normalizeTitlePhrase(target);
+
+    if (jobTitle.includes(target) || normalizeTitlePhrase(rawJobTitle).includes(normalizedTarget)) {
       matchedTitles.push(target);
       continue;
     }
@@ -205,17 +459,26 @@ function analyzeTitleAlignment(
       }
     }
 
+    const targetAliasGroups = detectTitleAliasGroups(target);
+    const sharedAliasGroups = Array.from(targetAliasGroups).filter((group) =>
+      jobAliasGroups.has(group)
+    );
+
     if (
       tokenOverlap >= 0.6 ||
       (matchedTokenCount >= 2 && targetTokens.length >= 2)
     ) {
       partialMatches.push(target);
+    } else if (sharedAliasGroups.length > 0) {
+      partialMatches.push(target);
+      bestTokenOverlap = Math.max(bestTokenOverlap, 0.65);
     } else if (tokenOverlap >= 0.4 && targetFamilies.size > 0) {
       partialMatches.push(target);
     }
   }
 
-  const hasFamilies = normalizedTargets.some((target) => detectTitleFamilies(target).size > 0);
+  // Only consider families from actual title entries for hard mismatch detection
+  const hasFamilies = titleEntries.some((target) => detectTitleFamilies(target).size > 0);
   const hardMismatch =
     matchedTitles.length === 0 &&
     partialMatches.length === 0 &&
@@ -308,75 +571,56 @@ function scoreSkills(
   // Also check description for skills if structured data is missing
   const descriptionLower = (job.description_text ?? "").toLowerCase();
 
-  const matchedRequired: string[] = [];
-  const matchedPreferred: string[] = [];
-  const missingRequired: string[] = [];
+  // Use hierarchical matching for structured skills
+  if (jobRequired.length > 0 || jobPreferred.length > 0) {
+    const hierarchy = hierarchicalSkillMatch(seekerSkills, jobRequired, jobPreferred);
 
-  // Check required skills
-  for (const skill of jobRequired) {
-    const found = seekerSkills.some((s) => fuzzyMatch(s, skill) || fuzzyMatch(skill, s));
-    if (found) {
-      matchedRequired.push(skill);
-    } else {
-      missingRequired.push(skill);
-    }
-  }
-
-  // Check preferred skills
-  for (const skill of jobPreferred) {
-    const found = seekerSkills.some((s) => fuzzyMatch(s, skill) || fuzzyMatch(skill, s));
-    if (found) {
-      matchedPreferred.push(skill);
-    }
-  }
-
-  // Fallback: check seeker skills against description
-  if (jobRequired.length === 0 && jobPreferred.length === 0) {
-    for (const skill of seekerSkills) {
-      if (fuzzyMatch(skill, descriptionLower)) {
-        matchedRequired.push(skill);
-      }
-    }
-  }
-
-  // Calculate score
-  let score = 0;
-  const totalJobSkills = jobRequired.length + jobPreferred.length;
-
-  if (totalJobSkills > 0) {
-    // Required skills worth 80% of skills score, preferred worth 20%
     const requiredWeight = 0.8;
     const preferredWeight = 0.2;
 
-    const requiredScore =
-      jobRequired.length > 0
-        ? (matchedRequired.length / jobRequired.length) * maxScore * requiredWeight
-        : maxScore * requiredWeight;
+    const requiredScore = jobRequired.length > 0
+      ? hierarchy.requiredCoverage * maxScore * requiredWeight
+      : maxScore * requiredWeight;
 
-    const preferredScore =
-      jobPreferred.length > 0
-        ? (matchedPreferred.length / jobPreferred.length) * maxScore * preferredWeight
-        : 0;
+    const preferredScore = jobPreferred.length > 0
+      ? hierarchy.preferredCoverage * maxScore * preferredWeight
+      : 0;
 
-    score = Math.round(requiredScore + preferredScore);
-  } else if (matchedRequired.length > 0) {
-    // Fallback scoring when no structured skills
-    score = Math.min(maxScore, matchedRequired.length * 7);
+    const score = Math.round(requiredScore + preferredScore);
+    const coveragePct = Math.round(hierarchy.requiredCoverage * 100);
+
+    return {
+      score: Math.min(maxScore, score),
+      max: maxScore,
+      details: {
+        matched_required: hierarchy.matchedRequired.map((m) => m.required),
+        matched_preferred: hierarchy.matchedPreferred.map((m) => m.preferred),
+        missing_required: hierarchy.missingRequired,
+        coverage_pct: coveragePct,
+      },
+    };
   }
 
-  const coveragePct =
-    jobRequired.length > 0
-      ? Math.round((matchedRequired.length / jobRequired.length) * 100)
-      : 100;
+  // Fallback: check seeker skills against description (no structured data)
+  const matchedFromDesc: string[] = [];
+  for (const skill of seekerSkills) {
+    if (fuzzyMatch(skill, descriptionLower)) {
+      matchedFromDesc.push(skill);
+    }
+  }
+
+  const score = matchedFromDesc.length > 0
+    ? Math.min(maxScore, matchedFromDesc.length * 7)
+    : 0;
 
   return {
     score: Math.min(maxScore, score),
     max: maxScore,
     details: {
-      matched_required: matchedRequired,
-      matched_preferred: matchedPreferred,
-      missing_required: missingRequired,
-      coverage_pct: coveragePct,
+      matched_required: matchedFromDesc,
+      matched_preferred: [],
+      missing_required: [],
+      coverage_pct: 100,
     },
   };
 }
@@ -551,9 +795,7 @@ function scoreLocationWithPreferences(
       if (jobWorkType === prefWorkType || (prefWorkType === "onsite" && jobWorkType === "on-site")) {
         // Check if job location matches any of this preference's locations
         const locationHit = prefLocations.some(
-          (loc) =>
-            jobLocationLower.includes(loc) ||
-            loc.includes(jobLocationLower.split(",")[0])
+          (loc) => locationsRoughlyMatch(jobLocationLower, loc)
         );
         if (locationHit) {
           bestScore = maxScore;
@@ -637,9 +879,7 @@ function scoreLocation(
     ].filter((l) => l.length > 0);
 
     const locationMatch = allSeekerLocations.some(
-      (loc) =>
-        jobLocationLower.includes(loc) ||
-        loc.includes(jobLocationLower.split(",")[0])
+      (loc) => locationsRoughlyMatch(jobLocationLower, loc)
     );
 
     if (locationMatch) {
@@ -793,7 +1033,7 @@ function determineConfidence(
   let totalPossible = 0;
 
   // Seeker data
-  totalPossible += 7;
+  totalPossible += 8;
   if (seeker.skills.length > 0) dataPoints++;
   if (seeker.target_titles.length > 0) dataPoints++;
   if (seeker.location) dataPoints++;
@@ -801,6 +1041,7 @@ function determineConfidence(
   if (seeker.years_experience !== null) dataPoints++;
   if (seeker.work_type) dataPoints++;
   if (seeker.seniority) dataPoints++;
+  if (seeker.resume_text && seeker.resume_text.length > 200) dataPoints++;
 
   // Job data
   totalPossible += 7;
@@ -834,6 +1075,95 @@ function determineRecommendation(
 }
 
 // ============================================================================
+// HARD DISQUALIFIERS
+//
+// Unlike the soft component penalties, these reject a job outright when a
+// confident, data-present conflict makes it unsuitable for the client —
+// regardless of how strong the skill/title overlap is. Only fires when the
+// relevant data exists on BOTH sides, to avoid false negatives on sparse posts.
+// ============================================================================
+
+const SALARY_FLOOR_RATIO = 0.8;
+const DISQUALIFIED_SCORE_CAP = 15;
+
+function seekerCanWorkAtLocation(
+  seeker: JobSeekerProfile,
+  jobLocationLower: string
+): boolean {
+  if (seeker.open_to_relocation) return true;
+
+  for (const pref of seeker.location_preferences) {
+    if (pref.work_type === "remote") continue;
+    if (
+      normalizeArray(pref.locations).some((loc) =>
+        locationsRoughlyMatch(jobLocationLower, loc)
+      )
+    ) {
+      return true;
+    }
+  }
+
+  if (
+    seeker.location &&
+    locationsRoughlyMatch(jobLocationLower, normalizeString(seeker.location))
+  ) {
+    return true;
+  }
+
+  return normalizeArray(seeker.preferred_locations).some((loc) =>
+    locationsRoughlyMatch(jobLocationLower, loc)
+  );
+}
+
+export interface HardDisqualifierResult {
+  disqualified: boolean;
+  reasons: string[];
+}
+
+export function checkHardDisqualifiers(
+  seeker: JobSeekerProfile,
+  job: JobPost
+): HardDisqualifierResult {
+  const reasons: string[] = [];
+
+  // 1. Excluded keyword — the client explicitly opted out of these.
+  const combinedText = `${job.title} ${job.description_text ?? ""}`.toLowerCase();
+  for (const keyword of normalizeArray(seeker.exclude_keywords)) {
+    if (keyword && combinedText.includes(keyword)) {
+      reasons.push(`disqualified_exclude_keyword: ${keyword}`);
+    }
+  }
+
+  // 2. Location / work-type the client cannot do. Remote jobs never trip this;
+  //    only on-site/hybrid roles with a concrete location the client can't reach.
+  const jobLocationLower = normalizeString(job.location ?? "");
+  const isJobRemote =
+    job.work_type === "remote" || jobLocationLower.includes("remote");
+  if (!isJobRemote && job.location && job.location.trim()) {
+    if (!seekerCanWorkAtLocation(seeker, jobLocationLower)) {
+      reasons.push("disqualified_location_unreachable");
+    }
+  }
+
+  // 3a. Pay clearly below the client's floor — compare the job's upper bound.
+  const jobUpper = job.salary_max ?? job.salary_min;
+  if (
+    jobUpper !== null &&
+    seeker.salary_min !== null &&
+    jobUpper < seeker.salary_min * SALARY_FLOOR_RATIO
+  ) {
+    reasons.push("disqualified_salary_below_floor");
+  }
+
+  // 3b. Sponsorship needed but the job explicitly offers none.
+  if (seeker.requires_visa_sponsorship && job.offers_visa_sponsorship === false) {
+    reasons.push("disqualified_no_visa_sponsorship");
+  }
+
+  return { disqualified: reasons.length > 0, reasons };
+}
+
+// ============================================================================
 // MAIN SCORING FUNCTION
 // ============================================================================
 
@@ -860,6 +1190,15 @@ export function computeMatchScore(
   const penaltiesResult = scorePenalties(seeker, job, weights.max_penalty);
   const titleAlignment = analyzeTitleAlignment(seeker.target_titles, job.title);
 
+  // Resume text bonus — extract additional signals not captured by structured fields
+  const resumeResult = computeResumeBonus(
+    seeker.resume_text,
+    seeker.skills,
+    job.required_skills,
+    job.preferred_skills,
+    job.description_text
+  );
+
   // Calculate total score
   let rawScore =
     skillsResult.score +
@@ -868,7 +1207,8 @@ export function computeMatchScore(
     salaryResult.score +
     locationResult.score +
     companyFitResult.score +
-    penaltiesResult.score; // penalties are negative
+    resumeResult.bonus +      // resume text bonus (0-8 pts)
+    penaltiesResult.score;    // penalties are negative
 
   const hasStructuredSkills =
     job.required_skills.length > 0 || job.preferred_skills.length > 0;
@@ -881,10 +1221,22 @@ export function computeMatchScore(
     rawScore = Math.min(rawScore, mismatchCap);
   }
 
-  const score = Math.max(0, Math.min(100, rawScore));
+  let score = Math.max(0, Math.min(100, rawScore));
 
   const confidence = determineConfidence(seeker, job);
-  const recommendation = determineRecommendation(score, confidence);
+
+  // Hard disqualifiers override everything: an unsuitable job is forced to
+  // poor_fit with a capped score so it neither displays nor auto-queues,
+  // no matter how strong the skill overlap is.
+  const disqualifiers = checkHardDisqualifiers(seeker, job);
+  let recommendation: MatchRecommendation;
+  if (disqualifiers.disqualified) {
+    score = Math.min(score, DISQUALIFIED_SCORE_CAP);
+    recommendation = "poor_fit";
+    penaltiesResult.details.reasons.push(...disqualifiers.reasons);
+  } else {
+    recommendation = determineRecommendation(score, confidence);
+  }
 
   const componentScores: MatchScoreBreakdown = {
     skills: skillsResult,
@@ -904,6 +1256,7 @@ export function computeMatchScore(
     ],
     missing_skills: skillsResult.details.missing_required,
     title_hits: titleResult.details.matched_titles,
+    disqualifiers: disqualifiers.reasons,
   };
 
   return {

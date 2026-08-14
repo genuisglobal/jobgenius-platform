@@ -6,6 +6,7 @@ type ExplanationOptions = {
   score?: number | null;
   confidence?: MatchConfidence | string | null;
   recommendation?: MatchRecommendation | string | null;
+  threshold?: number | null;
 };
 
 export type MatchExplanation = {
@@ -15,6 +16,12 @@ export type MatchExplanation = {
   queueBlocked: boolean;
   queueBlockCode: string | null;
   queueBlockReason: string | null;
+};
+
+export type AdjacentOpportunity = {
+  eligible: boolean;
+  headline: string | null;
+  supportingReasons: string[];
 };
 
 function asRecord(value: unknown): UnknownRecord | null {
@@ -65,6 +72,12 @@ function getComponentDetails(reasons: unknown, key: string): UnknownRecord | nul
   return asRecord(component?.details);
 }
 
+function getComponent(reasons: unknown, key: string): UnknownRecord | null {
+  const root = asRecord(reasons);
+  const componentScores = asRecord(root?.component_scores);
+  return asRecord(componentScores?.[key]);
+}
+
 function getPenaltyReasons(reasons: unknown): string[] {
   const details = getComponentDetails(reasons, "penalties");
   return asStringArray(details?.reasons);
@@ -94,9 +107,7 @@ function deriveQueueBlock(reasonCodes: string[], options: ExplanationOptions) {
   const normalizedCodes = reasonCodes.filter(Boolean);
   const hardBlockCode =
     normalizedCodes.find((code) => code.startsWith("exclude_keyword:")) ??
-    normalizedCodes.find((code) =>
-      ["visa_sponsorship_not_offered", "title_mismatch"].includes(code)
-    ) ??
+    normalizedCodes.find((code) => code === "visa_sponsorship_not_offered") ??
     null;
 
   if (hardBlockCode) {
@@ -211,7 +222,10 @@ export function buildMatchExplanation(
 
   const penaltyReasons = getPenaltyReasons(reasons);
   for (const reasonCode of penaltyReasons) {
-    if (reasonCode === "weak_title_alignment") {
+    if (
+      reasonCode === "weak_title_alignment" ||
+      reasonCode === "title_mismatch"
+    ) {
       pushUnique(cautions, toFriendlyBlocker(reasonCode));
       continue;
     }
@@ -244,5 +258,108 @@ export function buildMatchExplanation(
     queueBlocked: queueBlock.queueBlocked,
     queueBlockCode: queueBlock.queueBlockCode,
     queueBlockReason: queueBlock.queueBlockReason,
+  };
+}
+
+export function buildAdjacentOpportunity(
+  reasons: unknown,
+  options: ExplanationOptions = {}
+): AdjacentOpportunity {
+  const score = asNumber(options.score);
+  const threshold = asNumber(options.threshold);
+  const recommendation = String(options.recommendation || "").toLowerCase();
+  const penaltyReasons = getPenaltyReasons(reasons);
+
+  if (score === null || threshold === null || score >= threshold) {
+    return { eligible: false, headline: null, supportingReasons: [] };
+  }
+
+  if (
+    penaltyReasons.some(
+      (code) =>
+        code.startsWith("exclude_keyword:") ||
+        code === "visa_sponsorship_not_offered"
+    )
+  ) {
+    return { eligible: false, headline: null, supportingReasons: [] };
+  }
+
+  const hasTitleMismatch = penaltyReasons.includes("title_mismatch");
+  const hasWeakTitleAlignment = penaltyReasons.includes("weak_title_alignment");
+  if (!hasTitleMismatch && !hasWeakTitleAlignment) {
+    return { eligible: false, headline: null, supportingReasons: [] };
+  }
+
+  const floorScore = Math.max(40, threshold - 15);
+  if (score < floorScore || recommendation === "poor_fit") {
+    return { eligible: false, headline: null, supportingReasons: [] };
+  }
+
+  const skills = getComponentDetails(reasons, "skills");
+  const location = getComponentDetails(reasons, "location");
+  const experience = getComponentDetails(reasons, "experience");
+  const salary = getComponentDetails(reasons, "salary");
+  const companyFit = getComponentDetails(reasons, "company_fit");
+  const skillComponent = getComponent(reasons, "skills");
+
+  const matchedRequired = asStringArray(skills?.matched_required);
+  const matchedPreferred = asStringArray(skills?.matched_preferred);
+  const coveragePct = asNumber(skills?.coverage_pct) ?? 0;
+  const skillScore = asNumber(skillComponent?.score) ?? 0;
+  const skillMax = Math.max(asNumber(skillComponent?.max) ?? 0, 1);
+  const skillRatio = skillScore / skillMax;
+
+  const supportingReasons: string[] = [];
+
+  if (
+    coveragePct >= 50 ||
+    matchedRequired.length >= 2 ||
+    matchedRequired.length + matchedPreferred.length >= 3 ||
+    skillRatio >= 0.45
+  ) {
+    pushUnique(
+      supportingReasons,
+      matchedRequired.length > 0
+        ? `Strong skill overlap (${matchedRequired.length} required skill${matchedRequired.length === 1 ? "" : "s"} matched)`
+        : "Strong skill overlap for the underlying work"
+    );
+  }
+
+  const locationMatchType = String(location?.match_type || "").toLowerCase();
+  if (["exact", "remote", "relocation", "region"].includes(locationMatchType)) {
+    pushUnique(
+      supportingReasons,
+      locationMatchType === "remote"
+        ? "Location fit still works because the role is remote-compatible"
+        : "Location still fits the seeker's preferences"
+    );
+  }
+
+  const experienceMatchType = String(experience?.match_type || "").toLowerCase();
+  if (["exact", "close", "over"].includes(experienceMatchType)) {
+    pushUnique(supportingReasons, "Experience level is still in range");
+  }
+
+  const salaryMatchType = String(salary?.match_type || "").toLowerCase();
+  if (["full", "partial"].includes(salaryMatchType)) {
+    pushUnique(supportingReasons, "Compensation still lines up");
+  }
+
+  const industryMatch = Boolean(companyFit?.industry_match);
+  const sizeMatch = Boolean(companyFit?.size_match);
+  if (industryMatch || sizeMatch) {
+    pushUnique(supportingReasons, "Company fit still has relevant overlap");
+  }
+
+  if (supportingReasons.length < 2) {
+    return { eligible: false, headline: null, supportingReasons: [] };
+  }
+
+  return {
+    eligible: true,
+    headline: hasTitleMismatch
+      ? "Different title, but the underlying fit is still strong"
+      : "Title is broader or adjacent, but the role still fits well",
+    supportingReasons: supportingReasons.slice(0, 3),
   };
 }

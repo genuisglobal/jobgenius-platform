@@ -1,4 +1,4 @@
-import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
+import { requireAMAccessToSeeker } from "@/lib/am-access";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type MarkUsedPayload = {
@@ -24,11 +24,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const amResult = await getAccountManagerFromRequest(request.headers);
-  if ("error" in amResult) {
-    return Response.json({ success: false, error: amResult.error }, { status: 401 });
-  }
-
   const { data: otpRow, error: otpError } = await supabaseServer
     .from("otp_inbox")
     .select("id, job_seeker_id")
@@ -42,17 +37,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const hasAccess = await hasJobSeekerAccess(
-    amResult.accountManager.id,
-    otpRow.job_seeker_id
-  );
-
-  if (!hasAccess) {
-    return Response.json(
-      { success: false, error: "Not authorized for this job seeker." },
-      { status: 403 }
-    );
-  }
+  const access = await requireAMAccessToSeeker(request.headers, otpRow.job_seeker_id);
+  if (!access.ok) return access.response;
 
   const { error } = await supabaseServer
     .from("otp_inbox")

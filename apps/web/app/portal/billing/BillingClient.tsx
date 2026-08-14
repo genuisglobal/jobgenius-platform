@@ -5,12 +5,34 @@ import { useRouter } from "next/navigation";
 import PaymentRequestModal from "./PaymentRequestModal";
 import ScreenshotUploadModal from "./ScreenshotUploadModal";
 import ReportOfferModal from "./ReportOfferModal";
+import ContractStep from "../onboarding/steps/ContractStep";
 import InstallmentPlanStep from "../onboarding/steps/InstallmentPlanStep";
+
+type PlanType = "essentials" | "premium";
+
+interface OfferQuote {
+  planType: PlanType;
+  code: string | null;
+  source: "promo_code" | "seeker_referral" | null;
+  applied: boolean;
+  invalidCode: boolean;
+  baseFee: number;
+  discountPercent: number;
+  discountAmount: number;
+  finalFee: number;
+  message?: string;
+}
 
 interface Contract {
   id: string;
   plan_type: string;
   registration_fee: number;
+  base_registration_fee?: number | null;
+  final_registration_fee?: number | null;
+  discount_percent?: number | null;
+  discount_amount?: number | null;
+  discount_source?: string | null;
+  discount_code?: string | null;
   commission_rate: number;
   agreed_at: string | null;
   contract_html: string | null;
@@ -20,6 +42,7 @@ interface RegistrationPayment {
   id: string;
   total_amount: number;
   amount_paid: number;
+  credit_applied_amount?: number | null;
   status: string;
   payment_deadline: string | null;
   work_started: boolean;
@@ -72,6 +95,16 @@ interface PaymentRequest {
   created_at: string;
 }
 
+interface IntakeState {
+  status: string;
+  capacity_month?: string | null;
+  offer_path?: "discount" | "strategy_preview" | null;
+  selected_plan?: PlanType | null;
+  base_registration_fee?: number | string | null;
+  final_registration_fee?: number | string | null;
+  preview_expires_at?: string | null;
+}
+
 interface BillingClientProps {
   contract: Contract | null;
   registrationPayment: RegistrationPayment | null;
@@ -79,19 +112,21 @@ interface BillingClientProps {
   offers: JobOffer[];
   paymentRequests: PaymentRequest[];
   flexRequest: RegistrationFlexRequest | null;
+  intakeState: IntakeState | null;
   seekerId: string;
+  seekerName: string | null;
   userEmail: string;
 }
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800",
-  partial: "bg-blue-100 text-blue-800",
+  partial: "bg-violet-100 text-violet-800",
   complete: "bg-green-100 text-green-800",
   paid: "bg-green-100 text-green-800",
   overdue: "bg-red-100 text-red-800",
   legal: "bg-red-200 text-red-900",
   reported: "bg-gray-100 text-gray-700",
-  confirmed: "bg-blue-100 text-blue-700",
+  confirmed: "bg-violet-100 text-violet-700",
   accepted: "bg-green-100 text-green-800",
   details_sent: "bg-purple-100 text-purple-800",
   screenshot_uploaded: "bg-indigo-100 text-indigo-800",
@@ -114,7 +149,10 @@ export default function BillingClient({
   offers,
   paymentRequests,
   flexRequest,
+  intakeState,
   seekerId,
+  seekerName,
+  userEmail,
 }: BillingClientProps) {
   const router = useRouter();
   const [showPaymentRequest, setShowPaymentRequest] = useState<{
@@ -130,6 +168,11 @@ export default function BillingClient({
   } | null>(null);
   const [showReportOffer, setShowReportOffer] = useState(false);
   const [showContract, setShowContract] = useState(false);
+  const [previewQuote, setPreviewQuote] = useState<OfferQuote | null>(null);
+  const [previewConversionLoading, setPreviewConversionLoading] = useState(false);
+  const [previewConversionError, setPreviewConversionError] = useState<string | null>(
+    null
+  );
 
   const refresh = () => router.refresh();
 
@@ -140,22 +183,155 @@ export default function BillingClient({
   const getRequestForOffer = (offerId: string) =>
     paymentRequests.find((r) => r.offer_id === offerId);
 
+  const creditAppliedAmount = Number(
+    registrationPayment?.credit_applied_amount ?? 0
+  );
+  const remainingRegistrationBalance = registrationPayment
+    ? Math.max(
+        0,
+        Number(registrationPayment.total_amount) -
+          Number(registrationPayment.amount_paid) -
+          creditAppliedAmount
+      )
+    : 0;
+  const intakeBanner = getIntakeBanner(intakeState);
+  const previewPlanType =
+    intakeState?.selected_plan === "essentials" || intakeState?.selected_plan === "premium"
+      ? intakeState.selected_plan
+      : null;
+  const previewExpiryLabel = intakeState?.preview_expires_at
+    ? new Date(intakeState.preview_expires_at).toLocaleDateString()
+    : null;
+  const canConvertPreview =
+    !contract &&
+    intakeState?.offer_path === "strategy_preview" &&
+    Boolean(previewPlanType) &&
+    ["approved_preview", "preview_active", "preview_expired"].includes(
+      intakeState?.status ?? ""
+    );
+
+  async function handlePreviewConversion() {
+    setPreviewConversionLoading(true);
+    setPreviewConversionError(null);
+
+    try {
+      const response = await fetch("/api/portal/strategy-preview/convert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data?.quote) {
+        setPreviewConversionError(
+          data?.error || "Could not prepare your full-service agreement."
+        );
+        return;
+      }
+
+      setPreviewQuote(data.quote as OfferQuote);
+    } catch {
+      setPreviewConversionError(
+        "Network error while preparing your full-service agreement."
+      );
+    } finally {
+      setPreviewConversionLoading(false);
+    }
+  }
+
   if (!contract) {
     return (
       <div className="max-w-3xl mx-auto">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Billing</h1>
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
-          <p className="text-amber-800 font-medium mb-2">No contract on file</p>
-          <p className="text-sm text-amber-700 mb-4">
-            Please complete the onboarding process to select a plan and sign your contract.
-          </p>
-          <a
-            href="/portal/onboarding"
-            className="inline-block px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Go to Onboarding
-          </a>
-        </div>
+        {canConvertPreview && previewPlanType ? (
+          <div className="space-y-6">
+            <div className="bg-violet-50 border border-violet-200 rounded-xl p-6">
+              <p className="text-violet-800 font-medium mb-2">
+                Strategy preview conversion
+              </p>
+              <p className="text-sm text-violet-900/80 mb-4">
+                Your preview path is active. Generate the full-service agreement to
+                move from planning into live applications, recruiter outreach, and
+                managed execution.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-3 text-sm mb-5">
+                <div>
+                  <p className="text-violet-700">Plan</p>
+                  <p className="font-semibold text-violet-950 capitalize">
+                    {previewPlanType}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-violet-700">Standard registration fee</p>
+                  <p className="font-semibold text-violet-950">
+                    $
+                    {Number(
+                      intakeState?.base_registration_fee ??
+                        intakeState?.final_registration_fee ??
+                        0
+                    ).toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-violet-700">Preview window</p>
+                  <p className="font-semibold text-violet-950">
+                    {previewExpiryLabel ? `Ends ${previewExpiryLabel}` : "Active"}
+                  </p>
+                </div>
+              </div>
+
+              {previewConversionError && (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {previewConversionError}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  onClick={handlePreviewConversion}
+                  disabled={previewConversionLoading}
+                  className="px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-50"
+                >
+                  {previewConversionLoading
+                    ? "Preparing agreement..."
+                    : "Generate Full-Service Agreement"}
+                </button>
+                <a
+                  href="/portal/profile"
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-violet-700 bg-white border border-violet-200 rounded-lg hover:bg-violet-50 transition-colors"
+                >
+                  Review Profile
+                </a>
+              </div>
+            </div>
+
+            {previewQuote && (
+              <ContractStep
+                seekerName={seekerName || userEmail}
+                seekerEmail={userEmail}
+                planType={previewPlanType}
+                offerCode={null}
+                quote={previewQuote}
+                onContinue={(_registrationFee) => {
+                  refresh();
+                }}
+                onBack={() => setPreviewQuote(null)}
+              />
+            )}
+          </div>
+        ) : (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+            <p className="text-amber-800 font-medium mb-2">No contract on file</p>
+            <p className="text-sm text-amber-700 mb-4">
+              Please complete the onboarding process to select a plan and sign your contract.
+            </p>
+            <a
+              href="/portal/onboarding"
+              className="inline-block px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 transition-colors"
+            >
+              Go to Onboarding
+            </a>
+          </div>
+        )}
       </div>
     );
   }
@@ -182,10 +358,19 @@ export default function BillingClient({
         </button>
       </div>
 
+      {intakeBanner && (
+        <div className={`rounded-xl border p-4 text-sm ${intakeBanner.className}`}>
+          <p className="font-semibold">{intakeBanner.title}</p>
+          <p className="mt-1">{intakeBanner.body}</p>
+        </div>
+      )}
+
       {/* Work Started Banner */}
-      {registrationPayment && !registrationPayment.work_started && (
+      {registrationPayment &&
+        !registrationPayment.work_started &&
+        intakeState?.status !== "approved_payment_pending" && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 text-sm text-amber-800">
-          <strong>Services Pending:</strong> Your Account Manager will begin working on your job search once your first payment is confirmed.
+          <strong>Services Pending:</strong> Your Account Manager will begin working on your job search once your registration funding is confirmed.
         </div>
       )}
 
@@ -237,7 +422,7 @@ export default function BillingClient({
           <h2 className="text-lg font-semibold text-gray-900">Your Plan</h2>
           <button
             onClick={() => setShowContract(true)}
-            className="text-sm text-blue-600 hover:underline"
+            className="text-sm text-violet-600 hover:underline"
           >
             View Contract
           </button>
@@ -253,6 +438,22 @@ export default function BillingClient({
               ${Number(contract.registration_fee).toLocaleString()}
             </p>
           </div>
+          {Number(contract.discount_amount ?? 0) > 0 && (
+            <div>
+              <p className="text-gray-500">Discount</p>
+              <p className="font-semibold text-emerald-700">
+                -${Number(contract.discount_amount).toLocaleString()}
+              </p>
+              <p className="text-xs text-gray-500">
+                {contract.discount_source === "promo_code"
+                  ? "Promo code"
+                  : contract.discount_source === "seeker_referral"
+                  ? "Referral code"
+                  : "Offer applied"}
+                {contract.discount_code ? `: ${contract.discount_code}` : ""}
+              </p>
+            </div>
+          )}
           <div>
             <p className="text-gray-500">Commission Rate</p>
             <p className="font-semibold text-gray-900">
@@ -273,7 +474,7 @@ export default function BillingClient({
       {/* Registration Payment & Installments */}
       {canCreatePaymentPlan && normalizedPlanType && (
         <InstallmentPlanStep
-          planType={normalizedPlanType}
+          registrationFee={Number(contract.registration_fee)}
           onContinue={refresh}
           onBack={() => {}}
           showBackButton={false}
@@ -298,10 +499,16 @@ export default function BillingClient({
             <div>
               <p className="text-gray-500">Remaining</p>
               <p className="font-semibold text-gray-900">
-                ${(Number(registrationPayment.total_amount) - Number(registrationPayment.amount_paid)).toLocaleString()}
+                ${remainingRegistrationBalance.toLocaleString()}
               </p>
             </div>
           </div>
+
+          {creditAppliedAmount > 0 && (
+            <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+              Referral credit applied: <strong>${creditAppliedAmount.toLocaleString()}</strong>
+            </div>
+          )}
 
           {/* Installments */}
           <div className="space-y-3">
@@ -331,7 +538,7 @@ export default function BillingClient({
                           installmentId: inst.id,
                           label: `Installment ${inst.installment_number} ($${Number(inst.amount).toLocaleString()})`,
                         })}
-                        className="text-xs px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                        className="text-xs px-2 py-1 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors"
                       >
                         Request Details
                       </button>
@@ -409,7 +616,7 @@ export default function BillingClient({
                             offerId: offer.id,
                             label: `Commission for ${offer.company}`,
                           })}
-                          className="text-xs px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                          className="text-xs px-2 py-1 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors"
                         >
                           Request Payment Details
                         </button>
@@ -488,7 +695,7 @@ export default function BillingClient({
                     const w = window.open("", "_blank");
                     if (w) { w.document.write(contract.contract_html!); w.document.close(); w.print(); }
                   }}
-                  className="text-sm text-blue-600 hover:underline"
+                  className="text-sm text-violet-600 hover:underline"
                 >
                   Print / Save PDF
                 </button>
@@ -508,4 +715,70 @@ export default function BillingClient({
       )}
     </div>
   );
+}
+
+function getIntakeBanner(intakeState: IntakeState | null): {
+  title: string;
+  body: string;
+  className: string;
+} | null {
+  const previewExpiryLabel = intakeState?.preview_expires_at
+    ? new Date(intakeState.preview_expires_at).toLocaleDateString()
+    : null;
+
+  switch (intakeState?.status ?? null) {
+    case "pending_review":
+    case "submitted":
+      return {
+        title: "Profile under review",
+        body: "We review fit before a spot is reserved. You can keep your billing details ready while our team reviews this intake.",
+        className: "border-amber-200 bg-amber-50 text-amber-900",
+      };
+    case "waitlisted":
+      return {
+        title: "Waitlisted for the next onboarding window",
+        body: "This month's account manager capacity is currently full. No spot is reserved until a team member moves you out of the waitlist.",
+        className: "border-violet-200 bg-violet-50 text-violet-900",
+      };
+    case "approved_payment_pending":
+      return {
+        title: "Spot reserved, payment still required",
+        body: "Your onboarding spot has been approved. Live applications and outreach begin after registration funding is confirmed.",
+        className: "border-green-200 bg-green-50 text-green-900",
+      };
+    case "rejected":
+      return {
+        title: "Search not approved yet",
+        body: "Your intake is not currently approved for a managed onboarding spot. Update your profile before making any additional billing decisions.",
+        className: "border-red-200 bg-red-50 text-red-900",
+      };
+    case "approved_preview":
+      return {
+        title: "Strategy preview approved",
+        body: "Your preview slot is approved. Generate your full-service agreement whenever you are ready to move from planning into live execution.",
+        className: "border-green-200 bg-green-50 text-green-900",
+      };
+    case "call_completed":
+      return {
+        title: "First call complete",
+        body: "We have the information needed to move your preview forward. Preview approval still comes next, before any financial commitment.",
+        className: "border-cyan-200 bg-cyan-50 text-cyan-900",
+      };
+    case "preview_active":
+      return {
+        title: "Strategy preview active",
+        body: previewExpiryLabel
+          ? `Your account manager is handling the planning work now. This preview window ends on ${previewExpiryLabel}.`
+          : "Your account manager is handling the planning work now. Live execution still waits until payment is confirmed.",
+        className: "border-green-200 bg-green-50 text-green-900",
+      };
+    case "preview_expired":
+      return {
+        title: "Strategy preview expired",
+        body: "Convert to full service to reserve a spot and move into live search execution.",
+        className: "border-amber-200 bg-amber-50 text-amber-900",
+      };
+    default:
+      return null;
+  }
 }

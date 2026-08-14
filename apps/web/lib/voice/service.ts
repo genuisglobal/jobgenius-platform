@@ -9,7 +9,7 @@ const CALL_TYPE_LABELS: Record<VoiceCallType, string> = {
   follow_up: "Follow-up",
   discovery: "Discovery",
   check_in: "Check-in",
-  interview_prep: "Interview Prep",
+  interview_warmup: "Interview Warm-up",
   upsell_retention: "Upsell / Retention",
 };
 

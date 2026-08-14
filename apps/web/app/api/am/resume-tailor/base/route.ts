@@ -426,11 +426,15 @@ export async function POST(request: Request) {
     updated_at: string;
   } | null = null;
   try {
-    await supabaseAdmin
+    const { error: clearDefaultErr } = await supabaseAdmin
       .from("resume_bank_versions")
       .update({ is_default: false, updated_at: new Date().toISOString() })
       .eq("job_seeker_id", jobSeekerId)
       .eq("status", "active");
+
+    if (clearDefaultErr) {
+      console.error("[resume-tailor] failed to clear default flags:", clearDefaultErr);
+    }
 
     const nowIso = new Date().toISOString();
     const { data: inserted, error: insertError } = await supabaseAdmin

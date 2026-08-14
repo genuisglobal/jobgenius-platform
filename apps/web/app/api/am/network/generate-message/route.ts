@@ -4,6 +4,7 @@ import {
   generateNetworkOutreachEmail,
   generateNetworkOutreachText,
 } from "@/lib/network/message-generation";
+import { submitAiOutput } from "@/lib/ai-outputs";
 
 // POST: Generate a personalized outreach message
 export async function POST(request: Request) {
@@ -84,7 +85,38 @@ export async function POST(request: Request) {
         seeker,
         jobPost
       );
-      return NextResponse.json({ type: "email", ...result });
+
+      // Persist as a pending HITL row. AM reviews + edits before any send.
+      // The returned ai_output_id is referenced by the send flow so we can
+      // close the loop (markPublished) when the email actually goes out.
+      const submitted = await submitAiOutput({
+        kind: "outreach_draft",
+        payload: {
+          type: "email",
+          subject: result.subject,
+          body: result.body,
+          contact_id: contact.id,
+          contact_name: contact.full_name,
+          contact_type: contact.contact_type,
+          match_id: body.match_id,
+          job_post_id: jobPost.id,
+        },
+        refType: "network_contact_matches",
+        refId: body.match_id,
+        seekerId: seeker.id,
+        amId: auth.user.id,
+        createdBy: auth.user.id,
+        autoApprove: false,
+        // Drafts age out after 7 days if untouched.
+        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+      });
+
+      return NextResponse.json({
+        type: "email",
+        ai_output_id: submitted.id,
+        ai_output_status: submitted.status,
+        ...result,
+      });
     } else {
       const text = await generateNetworkOutreachText(
         contact,
@@ -92,7 +124,33 @@ export async function POST(request: Request) {
         seeker,
         jobPost
       );
-      return NextResponse.json({ type: "text", text });
+
+      const submitted = await submitAiOutput({
+        kind: "outreach_draft",
+        payload: {
+          type: "text",
+          text,
+          contact_id: contact.id,
+          contact_name: contact.full_name,
+          contact_type: contact.contact_type,
+          match_id: body.match_id,
+          job_post_id: jobPost.id,
+        },
+        refType: "network_contact_matches",
+        refId: body.match_id,
+        seekerId: seeker.id,
+        amId: auth.user.id,
+        createdBy: auth.user.id,
+        autoApprove: false,
+        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+      });
+
+      return NextResponse.json({
+        type: "text",
+        ai_output_id: submitted.id,
+        ai_output_status: submitted.status,
+        text,
+      });
     }
   } catch (err) {
     console.error("Message generation failed:", err);
