@@ -7,6 +7,11 @@ import {
   loadSavedRunnerStorageState,
 } from "@/lib/auto-apply-preflight";
 import { applyHostGraduation } from "@/lib/host-graduation";
+import {
+  describeDbError,
+  transientUnavailableBody,
+  withTransientRetry,
+} from "@/lib/supabase-retry";
 
 const AUTO_APPLY_ALLOWED_ATS = new Set(
   (process.env.AUTO_APPLY_ALLOWED_ATS ?? "LINKEDIN,GREENHOUSE,WORKDAY,LEVER,SMARTRECRUITERS,GENERIC")
@@ -38,19 +43,39 @@ async function runSweep(request: Request) {
   ).toISOString();
 
   // 1. Find QUEUED items that are old enough to be considered orphaned.
-  const { data: queuedItems, error: queueError } = await supabaseServer
-    .from("application_queue")
-    .select("id, job_seeker_id, job_post_id")
-    .eq("status", "QUEUED")
-    .lte("updated_at", cutoffIso)
-    .order("updated_at", { ascending: true })
-    .limit(SWEEP_LIMIT);
+  //
+  // Retried on an unreachable database: this endpoint runs every five
+  // minutes and Supabase drops a connection often enough that a bare
+  // failure here was the single biggest source of red scheduled runs.
+  const {
+    data: queuedItems,
+    error: queueError,
+    transient,
+  } = await withTransientRetry("queued items", () =>
+    supabaseServer
+      .from("application_queue")
+      .select("id, job_seeker_id, job_post_id")
+      .eq("status", "QUEUED")
+      .lte("updated_at", cutoffIso)
+      .order("updated_at", { ascending: true })
+      .limit(SWEEP_LIMIT)
+  );
 
   if (queueError) {
-    return Response.json(
-      { success: false, error: "Failed to load queued items." },
-      { status: 500 }
-    );
+    // Logged, because a generic 500 with the cause thrown away is what
+    // made this undiagnosable in the first place.
+    console.error("[queue:sweep] failed to load queued items:", {
+      transient,
+      error: describeDbError(queueError),
+    });
+    return transient
+      ? Response.json(transientUnavailableBody("queued items", queueError), {
+          status: 503,
+        })
+      : Response.json(
+          { success: false, error: "Failed to load queued items." },
+          { status: 500 }
+        );
   }
 
   if (!queuedItems || queuedItems.length === 0) {

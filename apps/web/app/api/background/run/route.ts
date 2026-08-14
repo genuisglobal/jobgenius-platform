@@ -1,6 +1,11 @@
 import { requireOpsAuth } from "@/lib/ops-auth";
 import { enforceBackgroundRateLimit } from "@/lib/rate-limit-presets";
 import { supabaseServer } from "@/lib/supabase/server";
+import {
+  describeDbError,
+  transientUnavailableBody,
+  withTransientRetry,
+} from "@/lib/supabase-retry";
 import { computeMatchScore, parseJobPostSmart } from "@/lib/matching";
 import { tailorResume } from "@/lib/resume-tailor";
 import {
@@ -1906,17 +1911,37 @@ async function runJobs(request: Request) {
   const staleRunRecovery = await recoverStaleApplicationRuns(nowIso);
   const workerId = `background:${process.env.VERCEL_REGION ?? "local"}:${randomUUID()}`;
 
-  const { data: queuedJobs, error } = await supabaseServer
-    .from("background_jobs")
-    .select("id, type, payload, attempts, max_attempts")
-    .in("status", ["QUEUED", "RETRY"])
-    .lte("run_at", nowIso)
-    .is("locked_at", null)
-    .order("run_at", { ascending: true })
-    .limit(limit);
+  // Retried on an unreachable database — see lib/supabase-retry.ts. This
+  // runs on a schedule, and a dropped Supabase connection here used to
+  // fail the whole run with a 500 that logged nothing.
+  const {
+    data: queuedJobs,
+    error,
+    transient,
+  } = await withTransientRetry("background jobs", () =>
+    supabaseServer
+      .from("background_jobs")
+      .select("id, type, payload, attempts, max_attempts")
+      .in("status", ["QUEUED", "RETRY"])
+      .lte("run_at", nowIso)
+      .is("locked_at", null)
+      .order("run_at", { ascending: true })
+      .limit(limit)
+  );
 
   if (error) {
-    return Response.json({ success: false, error: "Failed to load jobs." }, { status: 500 });
+    console.error("[background:run] failed to load jobs:", {
+      transient,
+      error: describeDbError(error),
+    });
+    return transient
+      ? Response.json(transientUnavailableBody("background jobs", error), {
+          status: 503,
+        })
+      : Response.json(
+          { success: false, error: "Failed to load jobs." },
+          { status: 500 }
+        );
   }
 
   const results: Array<{ id: string; status: string; error?: string }> = [];
