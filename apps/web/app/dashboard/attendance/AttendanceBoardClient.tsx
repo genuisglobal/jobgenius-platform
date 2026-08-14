@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   WAT_LABEL,
   STATUS_LABELS,
+  LONG_SHIFT_HOURS,
   breakMs,
   deriveStatus,
   formatDuration,
+  isLongOpenShift,
   isStale,
   watDate,
   watDateLabel,
@@ -16,11 +18,16 @@ import {
   type AttendanceStatus,
 } from "@/lib/attendance";
 
-type BoardRow = AttendanceDay & { am_name: string };
+type BoardRow = AttendanceDay & {
+  am_name: string;
+  adjusted_by_name?: string | null;
+};
 
 type BoardPayload = {
   work_date: string;
   my_account_manager_id: string;
+  /** People managers may correct a sign-out time somebody never set. */
+  can_adjust: boolean;
   rows: BoardRow[];
 };
 
@@ -48,6 +55,13 @@ export default function AttendanceBoardClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+
+  // Sign-out correction (people managers only).
+  const [adjusting, setAdjusting] = useState<string | null>(null);
+  const [adjustTime, setAdjustTime] = useState("");
+  const [adjustNote, setAdjustNote] = useState("");
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const today = useMemo(() => watDate(), []);
 
@@ -95,9 +109,53 @@ export default function AttendanceBoardClient({
     window.history.replaceState(null, "", url.toString());
   }, [date]);
 
+  function startAdjusting(row: BoardRow) {
+    setAdjusting(row.id);
+    setAdjustError(null);
+    setAdjustNote("");
+    // Seeded with the sign-in time rather than "now": the whole point is
+    // that nobody knows when they left, so an obviously-wrong default is
+    // safer than a plausible one somebody accepts without thinking.
+    setAdjustTime(watTime(row.signed_in_at));
+  }
+
+  async function submitAdjustment(row: BoardRow) {
+    if (!/^\d{2}:\d{2}$/.test(adjustTime)) {
+      setAdjustError("Enter a time as HH:MM.");
+      return;
+    }
+    setSaving(true);
+    setAdjustError(null);
+    try {
+      const res = await fetch(`/api/am/attendance/day/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          // WAT is UTC+1 with no daylight saving, so the offset is a
+          // constant and the server receives an unambiguous instant.
+          signed_out_at: `${row.work_date}T${adjustTime}:00+01:00`,
+          note: adjustNote,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        setAdjustError(payload.error ?? "Failed to save the sign-out time.");
+        return;
+      }
+      setAdjusting(null);
+      await load(date);
+    } catch {
+      setAdjustError("Network error saving the sign-out time.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const rows = data?.rows ?? [];
+  const canAdjust = data?.can_adjust ?? false;
   const totalWorked = rows.reduce((sum, row) => sum + workedMs(row, now), 0);
   const present = rows.filter((row) => deriveStatus(row) !== "done").length;
+  const openTooLong = rows.filter((row) => isLongOpenShift(row, now)).length;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -150,6 +208,17 @@ export default function AttendanceBoardClient({
         </div>
       )}
 
+      {openTooLong > 0 && (
+        <div className="p-3 rounded-lg text-sm bg-amber-50 text-amber-900 border border-amber-200">
+          <strong>{openTooLong}</strong> shift{openTooLong === 1 ? " has" : "s have"}{" "}
+          been open more than {LONG_SHIFT_HOURS} hours. Nothing is closed
+          automatically — a power cut is not a sign-out.{" "}
+          {canAdjust
+            ? "Set the time they actually left using Adjust."
+            : "A people manager needs to set the real sign-out time."}
+        </div>
+      )}
+
       <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-200 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-semibold text-gray-900">{watDateLabel(date)}</h2>
@@ -182,6 +251,11 @@ export default function AttendanceBoardClient({
                   <th className="px-3 py-2 text-right font-semibold w-24">Signed Out</th>
                   <th className="px-3 py-2 text-right font-semibold w-24">Breaks</th>
                   <th className="px-4 py-2 text-right font-semibold w-24">Worked</th>
+                  {canAdjust && (
+                    <th className="px-4 py-2 text-right font-semibold w-24">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -189,8 +263,11 @@ export default function AttendanceBoardClient({
                   const status = deriveStatus(row);
                   const isMe = row.account_manager_id === data?.my_account_manager_id;
                   const stale = isStale(row, now);
+                  const longOpen = isLongOpenShift(row, now);
+                  const editing = adjusting === row.id;
                   return (
-                    <tr key={row.id} className={isMe ? "bg-violet-50" : undefined}>
+                    <Fragment key={row.id}>
+                    <tr className={isMe ? "bg-violet-50" : undefined}>
                       <td className="px-4 py-2 font-medium text-gray-900">
                         {row.am_name}
                         {isMe && (
@@ -211,11 +288,25 @@ export default function AttendanceBoardClient({
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-gray-700">
                         {row.signed_out_at ? (
-                          watTime(row.signed_out_at)
-                        ) : stale ? (
+                          <>
+                            {watTime(row.signed_out_at)}
+                            {row.adjusted_at && (
+                              <span
+                                className="ml-1 text-violet-600 cursor-help"
+                                title={`Set by ${row.adjusted_by_name ?? "a people manager"}${
+                                  row.adjustment_note ? ` — ${row.adjustment_note}` : ""
+                                }`}
+                              >
+                                *
+                              </span>
+                            )}
+                          </>
+                        ) : longOpen || stale ? (
                           <span
                             className="text-amber-600"
-                            title="Left open overnight — never signed out"
+                            title={`Open ${formatDuration(
+                              now.getTime() - new Date(row.signed_in_at).getTime()
+                            )} — never signed out`}
                           >
                             not signed out
                           </span>
@@ -231,7 +322,69 @@ export default function AttendanceBoardClient({
                       <td className="px-4 py-2 text-right tabular-nums font-semibold text-gray-900">
                         {stale ? "—" : formatDuration(workedMs(row, now))}
                       </td>
+                      {canAdjust && (
+                        <td className="px-4 py-2 text-right">
+                          {!row.signed_out_at && (
+                            <button
+                              onClick={() =>
+                                editing ? setAdjusting(null) : startAdjusting(row)
+                              }
+                              className="px-2 py-1 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                              {editing ? "Cancel" : "Adjust"}
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
+
+                    {editing && (
+                      <tr>
+                        <td colSpan={7} className="bg-amber-50 px-4 py-3">
+                          <div className="flex flex-wrap items-end gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                What time did {row.am_name} actually leave? ({WAT_LABEL})
+                              </label>
+                              <input
+                                type="time"
+                                value={adjustTime}
+                                onChange={(e) => setAdjustTime(e.target.value)}
+                                className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 tabular-nums"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-[220px]">
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Why (optional, kept on the record)
+                              </label>
+                              <input
+                                type="text"
+                                value={adjustNote}
+                                onChange={(e) => setAdjustNote(e.target.value)}
+                                placeholder="Power cut at 14:00, confirmed with them"
+                                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                              />
+                            </div>
+                            <button
+                              onClick={() => submitAdjustment(row)}
+                              disabled={saving}
+                              className="px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
+                            >
+                              {saving ? "Saving…" : "Save sign-out"}
+                            </button>
+                          </div>
+                          <p className="text-xs text-gray-600 mt-2">
+                            Signed in at {watTime(row.signed_in_at)}. This is
+                            recorded against your name — it is the only way an
+                            hours record changes without the clock observing it.
+                          </p>
+                          {adjustError && (
+                            <p className="text-xs text-red-700 mt-1">{adjustError}</p>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>

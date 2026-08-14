@@ -85,6 +85,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/dashboard/activity-sheet", label: "Activity Sheet", icon: "chart" },
       { href: "/dashboard/attendance", label: "Attendance", icon: "clock" },
+      { href: "/dashboard/productivity", label: "Productivity", icon: "chart" },
     ],
   },
   {
@@ -126,6 +127,9 @@ const ADMIN_NAV_SECTION: NavSection = {
     { href: "/dashboard/admin/notifications", label: "Internal Notifications", icon: "alert" },
     { href: "/dashboard/admin/application-analytics", label: "App Analytics", icon: "analytics" },
     { href: "/dashboard/admin/adapter-health", label: "Adapter Health", icon: "analytics" },
+    { href: "/dashboard/admin/reconciliation", label: "Sheet Reconciliation", icon: "check" },
+    { href: "/dashboard/admin/roster", label: "Work Roster", icon: "calendar" },
+    { href: "/dashboard/admin/productivity-reviews", label: "Productivity Reviews", icon: "chart" },
     { href: "/dashboard/admin/qa", label: "QA Review", icon: "check" },
     { href: "/dashboard/admin/automation", label: "Kill Switches", icon: "alert" },
     { href: "/dashboard/admin/ai-usage", label: "AI Usage", icon: "analytics" },

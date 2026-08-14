@@ -54,6 +54,10 @@ export const NOTIFICATION_CATEGORIES = {
   delivery_blocker_due: "delivery_blocker_due",
   delivery_case_stale: "delivery_case_stale",
   delivery_risk_review_due: "delivery_risk_review_due",
+  am_productivity_digest: "am_productivity_digest",
+  attendance_long_shift: "attendance_long_shift",
+  attendance_sign_out_reminder: "attendance_sign_out_reminder",
+  productivity_review_flag: "productivity_review_flag",
 } as const;
 
 export type NotificationCategory =
@@ -83,6 +87,10 @@ export const INTERNAL_OPERATIONS_NOTIFICATION_CATEGORIES = [
   NOTIFICATION_CATEGORIES.delivery_blocker_due,
   NOTIFICATION_CATEGORIES.delivery_case_stale,
   NOTIFICATION_CATEGORIES.delivery_risk_review_due,
+  NOTIFICATION_CATEGORIES.am_productivity_digest,
+  NOTIFICATION_CATEGORIES.attendance_long_shift,
+  NOTIFICATION_CATEGORIES.attendance_sign_out_reminder,
+  NOTIFICATION_CATEGORIES.productivity_review_flag,
 ] as const;
 
 export function getNotificationCategoryLabel(category: string): string {
@@ -133,6 +141,14 @@ export function getNotificationCategoryLabel(category: string): string {
       return "Delivery case stale";
     case NOTIFICATION_CATEGORIES.delivery_risk_review_due:
       return "High-risk delivery review due";
+    case NOTIFICATION_CATEGORIES.am_productivity_digest:
+      return "Weekly productivity digest";
+    case NOTIFICATION_CATEGORIES.attendance_long_shift:
+      return "Shift left open";
+    case NOTIFICATION_CATEGORIES.attendance_sign_out_reminder:
+      return "Sign-out reminder";
+    case NOTIFICATION_CATEGORIES.productivity_review_flag:
+      return "Productivity review flag";
     default:
       return category
         .replace(/_/g, " ")
