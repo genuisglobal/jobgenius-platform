@@ -57,6 +57,7 @@ export const NOTIFICATION_CATEGORIES = {
   am_productivity_digest: "am_productivity_digest",
   attendance_long_shift: "attendance_long_shift",
   attendance_sign_out_reminder: "attendance_sign_out_reminder",
+  productivity_review_flag: "productivity_review_flag",
 } as const;
 
 export type NotificationCategory =
@@ -89,6 +90,7 @@ export const INTERNAL_OPERATIONS_NOTIFICATION_CATEGORIES = [
   NOTIFICATION_CATEGORIES.am_productivity_digest,
   NOTIFICATION_CATEGORIES.attendance_long_shift,
   NOTIFICATION_CATEGORIES.attendance_sign_out_reminder,
+  NOTIFICATION_CATEGORIES.productivity_review_flag,
 ] as const;
 
 export function getNotificationCategoryLabel(category: string): string {
@@ -145,6 +147,8 @@ export function getNotificationCategoryLabel(category: string): string {
       return "Shift left open";
     case NOTIFICATION_CATEGORIES.attendance_sign_out_reminder:
       return "Sign-out reminder";
+    case NOTIFICATION_CATEGORIES.productivity_review_flag:
+      return "Productivity review flag";
     default:
       return category
         .replace(/_/g, " ")

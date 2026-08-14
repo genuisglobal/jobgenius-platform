@@ -48,6 +48,13 @@ import {
   type SheetRow,
 } from "./activity-sheet";
 import { isStale, workedMs, type AttendanceDay } from "./attendance";
+import {
+  rosterForRange,
+  summariseAttendance,
+  type AttendanceSummary,
+  type Exemption,
+  type WorkSchedule,
+} from "./roster";
 
 /** A shift as the board loads it — attendance day plus the AM's name. */
 export type ShiftRow = AttendanceDay & { am_name: string };
@@ -131,6 +138,30 @@ export type AmProductivity = {
   pace: PaceBand;
   /** score_per_hour ÷ team median. 1.0 is exactly team pace. */
   pace_index: number | null;
+  /**
+   * Roster comparison (migration 118) — null when no roster was supplied,
+   * so the absence of a roster reads as "not measured" rather than as
+   * "perfect attendance".
+   */
+  attendance: AttendanceSummary | null;
+};
+
+/**
+ * Roster inputs. Optional: without them the report behaves exactly as it
+ * did before, and every `attendance` field is null.
+ *
+ * `managers` is the point of the whole thing. Buckets are otherwise built
+ * only from rows and shifts, so someone who never clocked in and never
+ * logged anything has nothing to build a bucket from and simply does not
+ * appear. Seeding from the list of people who are supposed to be working
+ * is what turns "invisible" into "absent".
+ */
+export type RosterInput = {
+  start: string;
+  end: string;
+  managers: Array<{ id: string; name: string }>;
+  schedules: WorkSchedule[];
+  exemptions: Exemption[];
 };
 
 export type ProductivityTeam = {
@@ -245,9 +276,16 @@ function paceFor(index: number | null): PaceBand {
 export function buildProductivity(
   rows: SheetRow[],
   shifts: ShiftRow[],
-  now: Date = new Date()
+  now: Date = new Date(),
+  roster?: RosterInput
 ): { managers: AmProductivity[]; team: ProductivityTeam } {
   const buckets = new Map<string, Bucket>();
+
+  // Seeded first so people with no data at all still get a row. Everything
+  // below then fills in whatever they did do.
+  for (const manager of roster?.managers ?? []) {
+    bucketFor(buckets, manager.id, manager.name);
+  }
 
   for (const row of rows) {
     const bucket = bucketFor(buckets, row.account_manager_id, row.am_name);
@@ -314,6 +352,29 @@ export function buildProductivity(
       });
     }
 
+    // Turned up at all: a shift, or work logged. Someone who worked but
+    // forgot to clock in is a data-quality problem, not an absence — the
+    // report already flags them through unmatched_days.
+    const appeared = new Set<string>([
+      ...Array.from(bucket.shiftByDate.keys()),
+      ...Array.from(bucket.countsByDate.entries())
+        .filter(([, counts]) => rowTotal(counts) > 0)
+        .map(([date]) => date),
+    ]);
+
+    const attendance = roster
+      ? summariseAttendance(
+          rosterForRange(
+            account_manager_id,
+            roster.start,
+            roster.end,
+            roster.schedules,
+            roster.exemptions
+          ),
+          appeared
+        )
+      : null;
+
     const counts = sumCounts(Array.from(bucket.countsByDate.values()));
     const measuredHours = measuredMsTotal / MS_PER_HOUR;
     const measuredCounts = sumCounts(measuredRows);
@@ -349,6 +410,7 @@ export function buildProductivity(
       rates,
       pace: "unrated",
       pace_index: null,
+      attendance,
     });
   }
 

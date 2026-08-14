@@ -20,6 +20,8 @@ on:
     - cron: "0 16 * * 5"
     # Hourly sweep for shifts left open past 10 hours — nobody is auto-signed out
     - cron: "0 * * * *"
+    # Weekly productivity review flags — Fridays 16:30 UTC, after the digest
+    - cron: "30 16 * * 5"
     # Daily follow-up drafts — day-3/7 bumps for applied-no-response (07:00 UTC)
     - cron: "0 7 * * *"
     # Daily outcome rollup — application→interview conversion tracking (07:30 UTC)
@@ -172,6 +174,18 @@ jobs:
           OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
         run: |
           curl -fsSL -X POST -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/productivity-digest"
+
+  productivity-reviews:
+    name: Weekly Productivity Review Flags
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 16 * * 5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Raise review items for sustained pace streaks
+        env:
+          WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
+          OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
+        run: |
+          curl -fsSL -X POST -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/productivity-reviews"
 
   follow-up-drafts:
     name: Follow-up Drafts

@@ -10,6 +10,7 @@ import {
 } from "@/lib/activity-sheet";
 import { watDate } from "@/lib/attendance";
 import { buildProductivity, type ShiftRow } from "@/lib/am-productivity";
+import type { Exemption } from "@/lib/roster";
 
 // Built from ACTIVITY_METRICS for the same reason the sheet route does it:
 // adding a metric must not silently leave the select list behind.
@@ -127,26 +128,29 @@ export async function GET(request: Request) {
   const shiftRecords = days ?? [];
 
   const dayIds = shiftRecords.map((d) => d.id as string);
-  const amIds = Array.from(
-    new Set([
-      ...records.map((r) => r.account_manager_id),
-      ...shiftRecords.map((d) => d.account_manager_id as string),
-    ])
-  );
 
-  const [{ data: breaks, error: breaksError }, { data: managers, error: managersError }] =
-    await Promise.all([
-      dayIds.length > 0
-        ? supabaseAdmin
-            .from("attendance_breaks")
-            .select("attendance_day_id, started_at, ended_at")
-            .in("attendance_day_id", dayIds)
-        : Promise.resolve({ data: [], error: null }),
-      amIds.length > 0
-        ? // `name`, not full_name — that spelling is job_seekers only.
-          supabaseAdmin.from("account_managers").select("id, name, email").in("id", amIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
+  const [
+    { data: breaks, error: breaksError },
+    { data: managers, error: managersError },
+    { data: schedules },
+    { data: exemptions },
+  ] = await Promise.all([
+    dayIds.length > 0
+      ? supabaseAdmin
+          .from("attendance_breaks")
+          .select("attendance_day_id, started_at, ended_at")
+          .in("attendance_day_id", dayIds)
+      : Promise.resolve({ data: [], error: null }),
+    // Everyone, not just those with data — the roster needs the full list
+    // to tell "absent" from "does not exist". `name`, not full_name.
+    supabaseAdmin.from("account_managers").select("id, name, email"),
+    supabaseAdmin.from("work_schedules").select("account_manager_id, work_days"),
+    supabaseAdmin
+      .from("attendance_exemptions")
+      .select("id, account_manager_id, start_date, end_date, reason, note")
+      .lte("start_date", end)
+      .gte("end_date", start),
+  ]);
 
   // Breaks failing would overstate everyone's worked hours, which is the
   // denominator of every rate on the page.
@@ -204,7 +208,19 @@ export async function GET(request: Request) {
     breaks: breaksByDay.get(day.id as string) ?? [],
   }));
 
-  const { managers: report, team } = buildProductivity(rows, shifts, new Date());
+  const { managers: report, team } = buildProductivity(rows, shifts, new Date(), {
+    start,
+    end,
+    managers: (managers ?? []).map((m) => ({
+      id: m.id as string,
+      name: nameById.get(m.id as string) ?? "Unknown AM",
+    })),
+    schedules: (schedules ?? []).map((s) => ({
+      account_manager_id: s.account_manager_id as string,
+      work_days: (s.work_days as number[]) ?? [],
+    })),
+    exemptions: (exemptions ?? []) as unknown as Exemption[],
+  });
 
   // The median inside `team` is already computed from everyone; filtering
   // here removes colleagues' rows without changing the bar they set.

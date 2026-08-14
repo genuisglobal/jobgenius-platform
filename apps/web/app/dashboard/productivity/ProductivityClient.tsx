@@ -330,6 +330,12 @@ export default function ProductivityClient({
                   >
                     Logged
                   </th>
+                  <th
+                    className="px-4 py-2 text-right font-semibold"
+                    title="Rostered days with no shift and nothing logged, excluding approved leave and holidays"
+                  >
+                    Absent
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -410,11 +416,38 @@ export default function ProductivityClient({
                             {manager.days_logged}/{manager.days_on_clock}
                           </span>
                         </td>
+                        <td className="px-4 py-2 text-right tabular-nums">
+                          {manager.attendance === null ? (
+                            <span className="text-gray-400">—</span>
+                          ) : manager.attendance.absent_days > 0 ? (
+                            <span
+                              className="text-amber-700 font-semibold"
+                              title={`Expected ${manager.attendance.expected_days} days${
+                                manager.attendance.exempt_days > 0
+                                  ? `, ${manager.attendance.exempt_days} excused`
+                                  : ""
+                              }`}
+                            >
+                              {manager.attendance.absent_days}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">0</span>
+                          )}
+                          {manager.attendance &&
+                            manager.attendance.exempt_days > 0 && (
+                              <span
+                                className="text-gray-400 text-xs ml-1"
+                                title="Approved leave or public holidays"
+                              >
+                                +{manager.attendance.exempt_days} off
+                              </span>
+                            )}
+                        </td>
                       </tr>
 
                       {open && (
                         <tr>
-                          <td colSpan={12} className="bg-gray-50 px-4 py-3">
+                          <td colSpan={13} className="bg-gray-50 px-4 py-3">
                             <table className="w-full text-xs">
                               <thead className="text-gray-500 uppercase">
                                 <tr>

@@ -256,6 +256,63 @@ describe("buildProductivity", () => {
     expect(team.score).toBeCloseTo(10 + 100 + 6);
   });
 
+  it("surfaces an AM with no shift and no activity as absent, not as missing", () => {
+    // The hole the roster exists to close: before it, someone who never
+    // clocked in produced no bucket and vanished from the report entirely.
+    const { managers } = buildProductivity([], [], NOW, {
+      start: "2026-08-10",
+      end: "2026-08-14",
+      managers: [{ id: "ghost", name: "Never Clocked In" }],
+      schedules: [],
+      exemptions: [],
+    });
+
+    expect(managers).toHaveLength(1);
+    expect(managers[0].account_manager_id).toBe("ghost");
+    expect(managers[0].attendance?.expected_days).toBe(5);
+    expect(managers[0].attendance?.absent_days).toBe(5);
+    expect(managers[0].attendance?.attendance_rate).toBe(0);
+    // Absence is reported on its own, never folded into the rate.
+    expect(managers[0].rates).toBeNull();
+  });
+
+  it("does not count approved leave as absence", () => {
+    const { managers } = buildProductivity(
+      [row("a", "2026-08-10", { easy_applications: 8 })],
+      [shift("a", "2026-08-10", 8)],
+      NOW,
+      {
+        start: "2026-08-10",
+        end: "2026-08-14",
+        managers: [{ id: "a", name: "AM a" }],
+        schedules: [],
+        exemptions: [
+          {
+            id: "ex-1",
+            account_manager_id: "a",
+            start_date: "2026-08-11",
+            end_date: "2026-08-14",
+            reason: "leave",
+          },
+        ],
+      }
+    );
+
+    expect(managers[0].attendance?.exempt_days).toBe(4);
+    expect(managers[0].attendance?.expected_days).toBe(1);
+    expect(managers[0].attendance?.absent_days).toBe(0);
+  });
+
+  it("leaves attendance null when no roster is supplied", () => {
+    // Absent roster must read as "not measured", never as perfect attendance.
+    const { managers } = buildProductivity(
+      [row("a", "2026-08-10", { easy_applications: 8 })],
+      [shift("a", "2026-08-10", 8)],
+      NOW
+    );
+    expect(managers[0].attendance).toBeNull();
+  });
+
   it("handles an empty range without inventing numbers", () => {
     const { managers, team } = buildProductivity([], [], NOW);
     expect(managers).toEqual([]);
