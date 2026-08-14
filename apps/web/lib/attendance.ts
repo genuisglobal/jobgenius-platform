@@ -27,6 +27,13 @@ export type AttendanceDay = {
   signed_in_at: string;
   signed_out_at: string | null;
   breaks: AttendanceBreak[];
+  /** Migration 116 — present once an admin has corrected the sign-out. */
+  adjusted_by?: string | null;
+  adjusted_at?: string | null;
+  adjustment_note?: string | null;
+  long_shift_alerted_at?: string | null;
+  /** Migration 117 — when the worker was asked if they forgot to sign out. */
+  self_nudge_sent_at?: string | null;
 };
 
 export type AttendanceStatus = "off" | "working" | "on_break" | "done";
@@ -196,6 +203,133 @@ export function workedHours(day: AttendanceDay, now: Date = new Date()): number 
  */
 export function isStale(day: AttendanceDay, now: Date = new Date()): boolean {
   return !day.signed_out_at && watDate(now) !== day.work_date;
+}
+
+// ─── Long-running shifts (migration 116) ─────────────────────────────────
+
+/**
+ * Two rungs, an hour apart. Nothing auto-closes at either — a power cut
+ * must never be recorded as "went home", and only a person knows what
+ * time someone actually left.
+ *
+ *   9h  — ask the worker whether they forgot. Most forgotten sign-outs
+ *         are theirs to fix, and fixing it costs one person a click.
+ *  10h  — tell the people managers, who can set a past time (the worker
+ *         cannot). Only reached when the nudge went unanswered.
+ *
+ * Both sit above any believable working day, so they fire on forgotten
+ * sign-outs rather than on overtime.
+ */
+export const SELF_NUDGE_HOURS = 9;
+export const LONG_SHIFT_HOURS = 10;
+
+/** Wall-clock time since sign-in, breaks included. */
+export function elapsedSinceSignIn(
+  day: AttendanceDay,
+  now: Date = new Date()
+): number {
+  const start = ms(day.signed_in_at);
+  if (start === null) return 0;
+  return Math.max(0, now.getTime() - start);
+}
+
+/** Still open, and running past `hours`. The shared shape of both rungs. */
+export function isOpenShiftPast(
+  day: AttendanceDay,
+  hours: number,
+  now: Date = new Date()
+): boolean {
+  if (day.signed_out_at) return false;
+  return elapsedSinceSignIn(day, now) >= hours * 3_600_000;
+}
+
+/** Past the escalation threshold — a manager's problem now. */
+export function isLongOpenShift(
+  day: AttendanceDay,
+  now: Date = new Date()
+): boolean {
+  return isOpenShiftPast(day, LONG_SHIFT_HOURS, now);
+}
+
+/** Past the nudge threshold — still the worker's own to fix. */
+export function needsSelfNudge(
+  day: AttendanceDay,
+  now: Date = new Date()
+): boolean {
+  return isOpenShiftPast(day, SELF_NUDGE_HOURS, now);
+}
+
+/** True once an admin has corrected this day's sign-out time by hand. */
+export function wasAdjusted(day: AttendanceDay): boolean {
+  return Boolean(day.adjusted_at);
+}
+
+export type SignOutValidation =
+  | { ok: true; iso: string }
+  | { ok: false; error: string };
+
+/**
+ * Checks a hand-entered sign-out time before it is written.
+ *
+ * This is the one place a human types into an hours record, so it is also
+ * the one place a typo becomes payroll. Each rule rejects something that
+ * would silently produce a wrong number rather than an obvious error:
+ * leaving before arriving, a shift longer than the day it belongs to, a
+ * sign-out in the future, or a time that lands before a break the worker
+ * had already started.
+ */
+export function validateAdjustedSignOut(
+  day: AttendanceDay,
+  value: unknown,
+  now: Date = new Date()
+): SignOutValidation {
+  if (typeof value !== "string" || value.trim() === "") {
+    return { ok: false, error: "A sign-out time is required." };
+  }
+
+  const parsed = new Date(value);
+  const time = parsed.getTime();
+  if (Number.isNaN(time)) {
+    return { ok: false, error: "That is not a valid time." };
+  }
+
+  const start = ms(day.signed_in_at);
+  if (start === null) {
+    return { ok: false, error: "This shift has no valid sign-in time." };
+  }
+
+  if (time < start) {
+    return { ok: false, error: "Sign-out cannot be before sign-in." };
+  }
+
+  // A minute of slack: an admin correcting a shift "as of now" will often
+  // submit a time a few seconds stale.
+  if (time > now.getTime() + 60_000) {
+    return { ok: false, error: "Sign-out cannot be in the future." };
+  }
+
+  if (time - start > 24 * 3_600_000) {
+    return {
+      ok: false,
+      error: "A shift cannot run longer than 24 hours. Check the date.",
+    };
+  }
+
+  // An open break that started after the proposed sign-out is a genuine
+  // contradiction — the worker went on break after leaving. Clamping it
+  // silently would bury the fact that one of the two times is wrong.
+  const running = openBreak(day);
+  if (running) {
+    const breakStart = ms(running.started_at);
+    if (breakStart !== null && breakStart > time) {
+      return {
+        ok: false,
+        error: `They started a break at ${watTime(running.started_at)}, after this sign-out time. Pick a later time.`,
+      };
+    }
+  }
+
+  return { ok: true, iso: new Date(time).toISOString() };
 }
 
 export const STATUS_LABELS: Record<AttendanceStatus, string> = {

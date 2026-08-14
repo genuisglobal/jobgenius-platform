@@ -85,6 +85,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/dashboard/activity-sheet", label: "Activity Sheet", icon: "chart" },
       { href: "/dashboard/attendance", label: "Attendance", icon: "clock" },
+      { href: "/dashboard/productivity", label: "Productivity", icon: "chart" },
     ],
   },
   {

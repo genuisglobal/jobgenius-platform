@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAM, supabaseAdmin } from "@/lib/auth";
+import { isPeopleManagerRole } from "@/lib/auth/roles";
 import { watDate, type AttendanceDay } from "@/lib/attendance";
 
 // GET /api/am/attendance/day?date=YYYY-MM-DD
@@ -17,7 +18,9 @@ export async function GET(request: Request) {
 
   const { data: days, error: daysError } = await supabaseAdmin
     .from("attendance_days")
-    .select("id, account_manager_id, work_date, signed_in_at, signed_out_at")
+    .select(
+      "id, account_manager_id, work_date, signed_in_at, signed_out_at, adjusted_by, adjusted_at, adjustment_note"
+    )
     .eq("work_date", workDate)
     .order("signed_in_at", { ascending: true });
 
@@ -28,7 +31,14 @@ export async function GET(request: Request) {
 
   const dayIds = (days ?? []).map((d) => d.id as string);
   const amIds = Array.from(
-    new Set([...(days ?? []).map((d) => d.account_manager_id as string), auth.user.id])
+    new Set([
+      ...(days ?? []).map((d) => d.account_manager_id as string),
+      // Whoever corrected a sign-out may not have worked that day themselves.
+      ...(days ?? [])
+        .map((d) => d.adjusted_by as string | null)
+        .filter((id): id is string => Boolean(id)),
+      auth.user.id,
+    ])
   );
 
   const [{ data: breaks }, { data: managers, error: managersError }] = await Promise.all([
@@ -75,6 +85,13 @@ export async function GET(request: Request) {
     work_date: day.work_date as string,
     signed_in_at: day.signed_in_at as string,
     signed_out_at: (day.signed_out_at as string | null) ?? null,
+    adjusted_by: (day.adjusted_by as string | null) ?? null,
+    adjusted_at: (day.adjusted_at as string | null) ?? null,
+    adjustment_note: (day.adjustment_note as string | null) ?? null,
+    // The corrector's name, so the board explains itself without a lookup.
+    adjusted_by_name: day.adjusted_by
+      ? nameById.get(day.adjusted_by as string) ?? null
+      : null,
     breaks: breaksByDay.get(day.id as string) ?? [],
   }));
 
@@ -82,6 +99,7 @@ export async function GET(request: Request) {
     work_date: workDate,
     server_time: new Date().toISOString(),
     my_account_manager_id: auth.user.id,
+    can_adjust: isPeopleManagerRole(auth.user.role),
     rows,
   });
 }
