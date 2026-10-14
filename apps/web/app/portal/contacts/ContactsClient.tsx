@@ -46,7 +46,7 @@ export default function ContactsClient({ contacts }: Props) {
         <input
           type="text"
           placeholder="Search by name, company, email..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -55,7 +55,7 @@ export default function ContactsClient({ contacts }: Props) {
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-lg shadow p-4 text-center">
-          <div className="text-2xl font-bold text-blue-600">{contacts.length}</div>
+          <div className="text-2xl font-bold text-violet-600">{contacts.length}</div>
           <div className="text-xs text-gray-500 mt-1">Total Contacts</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 text-center">
@@ -125,7 +125,7 @@ export default function ContactsClient({ contacts }: Props) {
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
-                    <a href={`mailto:${contact.email}`} className="text-blue-600 hover:underline truncate">
+                    <a href={`mailto:${contact.email}`} className="text-violet-600 hover:underline truncate">
                       {contact.email}
                     </a>
                   </div>
@@ -139,7 +139,7 @@ export default function ContactsClient({ contacts }: Props) {
                       href={contact.linkedin_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline truncate"
+                      className="text-violet-600 hover:underline truncate"
                     >
                       LinkedIn Profile
                     </a>

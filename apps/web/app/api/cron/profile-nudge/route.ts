@@ -28,12 +28,16 @@ export async function GET(req: NextRequest) {
     .not("email", "is", null);
 
   if (error || !seekers || seekers.length === 0) {
-    await supabaseAdmin.from("cron_runs").insert({
+    const { error: cronLogError } = await supabaseAdmin.from("cron_runs").insert({
       job_name: "profile-nudge",
       triggered_by: "cron",
       status: "success",
       summary: { seekers_found: 0, nudges_sent: 0 },
     });
+
+    if (cronLogError) {
+      console.error("[cron:profile-nudge] failed to log cron run:", cronLogError);
+    }
     return NextResponse.json({ sent: 0 });
   }
 
@@ -76,7 +80,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  await supabaseAdmin.from("cron_runs").insert({
+  const { error: cronLogError2 } = await supabaseAdmin.from("cron_runs").insert({
     job_name: "profile-nudge",
     triggered_by: "cron",
     status: errors.length > 0 ? "partial" : "success",
@@ -87,6 +91,10 @@ export async function GET(req: NextRequest) {
       errors: errors.length > 0 ? errors : undefined,
     },
   });
+
+  if (cronLogError2) {
+    console.error("[cron:profile-nudge] failed to log cron run:", cronLogError2);
+  }
 
   return NextResponse.json({ sent, eligible: toNudge.length, total_found: seekers.length });
 }

@@ -1,5 +1,5 @@
 import { buildSimplePdf } from "@/lib/pdf";
-import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
+import { requireAMAccessToSeeker } from "@/lib/am-access";
 import { supabaseServer } from "@/lib/supabase/server";
 
 function appendSection(lines: string[], title: string, items: string[] | string) {
@@ -39,22 +39,8 @@ export async function GET(
     );
   }
 
-  const amResult = await getAccountManagerFromRequest(request.headers);
-  if ("error" in amResult) {
-    return Response.json({ success: false, error: amResult.error }, { status: 401 });
-  }
-
-  const hasAccess = await hasJobSeekerAccess(
-    amResult.accountManager.id,
-    prep.job_seeker_id
-  );
-
-  if (!hasAccess) {
-    return Response.json(
-      { success: false, error: "Not authorized for this job seeker." },
-      { status: 403 }
-    );
-  }
+  const access = await requireAMAccessToSeeker(request.headers, prep.job_seeker_id);
+  if (!access.ok) return access.response;
 
   const content = prep.content as {
     role_summary?: string;

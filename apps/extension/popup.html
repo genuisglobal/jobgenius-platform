@@ -6,12 +6,19 @@
     <title>JobGenius</title>
     <style>
       :root {
-        --indigo-50: #eef2ff;
-        --indigo-100: #e0e7ff;
-        --indigo-500: #6366f1;
-        --indigo-600: #4f46e5;
-        --indigo-700: #4338ca;
-        --blue-50: #eff6ff;
+        /* Brand violet (matches the logo + /signup). The --indigo-* names are
+           kept so existing usages re-theme without per-rule edits. */
+        --indigo-50: #f5f3ff;
+        --indigo-100: #ede9fe;
+        --indigo-500: #8b5cf6;
+        --indigo-600: #7c3aed;
+        --indigo-700: #6d28d9;
+        --blue-50: #f5f3ff;
+        /* Brand orange accent (the "Genius" half of the logo). */
+        --orange-50: #fff7ed;
+        --orange-100: #ffedd5;
+        --orange-500: #f97316;
+        --orange-600: #ea580c;
         --gray-50: #f9fafb;
         --gray-100: #f3f4f6;
         --gray-200: #e5e7eb;
@@ -52,7 +59,10 @@
       }
 
       .header-left { display: flex; align-items: center; gap: 8px; }
-      .logo { font-size: 16px; font-weight: 700; color: var(--indigo-600); }
+      .logo { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+      .logo-job { color: var(--indigo-600); }
+      .logo-genius { color: var(--orange-500); }
+      .logo-mark { display: inline-flex; align-items: center; }
 
       .version {
         font-size: 10px;
@@ -343,6 +353,74 @@
       .scrape-options { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gray-200); }
       .scrape-options-title { font-size: 11px; font-weight: 600; color: var(--gray-700); margin-bottom: 6px; }
 
+      /* ─── Admin oversight ───────────────────────────── */
+      .ks-row {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 8px 0; border-bottom: 1px solid var(--gray-100);
+      }
+      .ks-row:last-child { border-bottom: 0; }
+      .ks-label { font-size: 12px; color: var(--gray-700); font-weight: 500; }
+      .ks-toggle {
+        border: 0; border-radius: 999px; padding: 4px 12px;
+        font-size: 11px; font-weight: 700; cursor: pointer; min-width: 74px;
+      }
+      .ks-on { background: var(--green-100); color: var(--green-700); }
+      .ks-off { background: #fee2e2; color: var(--red-600); }
+      .ks-confirm { background: #fef3c7; color: #92400e; }
+      .health-row {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 6px 8px; border-radius: 6px; background: var(--gray-50); margin-bottom: 4px;
+      }
+      .health-name { font-size: 11px; font-weight: 600; color: var(--gray-700); }
+      .health-rate { font-size: 11px; font-weight: 700; }
+      .h-healthy { color: var(--green-600); }
+      .h-degraded { color: #d97706; }
+      .h-down { color: var(--red-600); }
+
+      /* ─── Cockpit (AM triage board) ─────────────────── */
+      .cockpit-totals {
+        display: flex; gap: 6px; margin-bottom: 10px;
+      }
+      .cockpit-total {
+        flex: 1; text-align: center; padding: 7px 4px;
+        border-radius: 8px; background: var(--gray-50); border: 1px solid var(--gray-100);
+      }
+      .cockpit-total .num { font-size: 15px; font-weight: 800; line-height: 1; }
+      .cockpit-total .lbl {
+        font-size: 8px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .03em; color: var(--gray-500); margin-top: 3px;
+      }
+      .cockpit-total.attn .num { color: var(--red-600); }
+      .cockpit-total.queue .num { color: var(--indigo-600); }
+      .cockpit-total.matches .num { color: var(--green-600); }
+
+      .cockpit-row {
+        display: flex; align-items: center; gap: 8px;
+        background: var(--white); border-radius: 8px; padding: 9px 10px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+        border-left: 3px solid var(--gray-200);
+      }
+      .cockpit-row.p-attn { border-left-color: var(--red-500); }
+      .cockpit-row.p-queue { border-left-color: var(--indigo-500); }
+      .cockpit-row.p-matches { border-left-color: var(--green-500); }
+      .cockpit-row.p-idle { opacity: 0.72; }
+      .cockpit-row-main { flex: 1; min-width: 0; }
+      .cockpit-name {
+        font-size: 12px; font-weight: 600; color: var(--gray-900);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .cockpit-chips { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+      .ck-chip {
+        font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+      }
+      .ck-chip.attn { background: var(--red-50); color: var(--red-600); }
+      .ck-chip.queue { background: var(--indigo-50); color: var(--indigo-600); }
+      .ck-chip.matches { background: var(--green-50); color: var(--green-700); }
+      .ck-chip.idle { background: var(--gray-100); color: var(--gray-500); }
+      .cockpit-work {
+        width: auto; flex: none; padding: 6px 12px; font-size: 11px;
+      }
+
       .hidden { display: none !important; }
 
       /* ─── Autofill Modal ─────────────────────────────── */
@@ -378,7 +456,7 @@
       }
 
       .af-header {
-        background: linear-gradient(135deg, var(--indigo-600) 0%, #7c3aed 100%);
+        background: linear-gradient(135deg, var(--indigo-600) 0%, var(--orange-500) 100%);
         padding: 14px 16px;
         border-radius: 14px 14px 0 0;
         display: flex;
@@ -529,8 +607,16 @@
   <body>
     <div class="header">
       <div class="header-left">
-        <div class="logo">JobGenius</div>
-        <span class="version">v0.3.0</span>
+        <span class="logo-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
+            <ellipse cx="22" cy="28" rx="18" ry="8.5" transform="rotate(-20 22 28)" stroke="#7c3aed" stroke-width="3" opacity="0.45"/>
+            <circle cx="22" cy="19" r="5" fill="#7c3aed"/>
+            <path d="M13 33c0-5 4-9 9-9s9 4 9 9z" fill="#7c3aed"/>
+            <path d="M37 11l1.7 4.6L43 17l-4.3 1.4L37 23l-1.7-4.6L31 17l4.3-1.4z" fill="#f97316"/>
+          </svg>
+        </span>
+        <div class="logo"><span class="logo-job">Job</span><span class="logo-genius">Genius</span></div>
+        <span class="version" id="appVersion">v0.4.1</span>
       </div>
       <div class="am-badge disconnected" id="connectionBadge">
         <span class="dot"></span>
@@ -561,6 +647,10 @@
 
       <!-- Main App -->
       <div id="mainApp" class="hidden">
+        <div id="updateBanner" class="hidden" style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 10px;font-size:11px;margin-bottom:10px;line-height:1.4">
+          A newer JobGenius extension is available. Please update to keep applications working reliably.
+        </div>
+
         <div class="am-profile" id="amProfileCard">
           <div class="avatar" id="amAvatar">?</div>
           <div class="info">
@@ -576,16 +666,43 @@
           </select>
         </div>
 
-        <div class="tabs">
-          <button class="tab active" data-tab="jobs">Jobs</button>
-          <button class="tab" data-tab="matched">Matched</button>
-          <button class="tab" data-tab="myjobs">My Jobs</button>
-          <button class="tab" data-tab="contacts">Contacts</button>
-          <button class="tab" data-tab="settings">Settings</button>
+        <!-- Global runner status (visible from any tab) -->
+        <div class="runner-status" id="globalRunnerStatus" style="margin-bottom:10px">
+          <div class="runner-indicator" id="runnerIndicator"></div>
+          <div class="runner-text">Runner: <strong id="runnerStatusText">Stopped</strong></div>
         </div>
 
-        <!-- Jobs Panel -->
-        <div class="panel active" id="panel-jobs">
+        <div class="tabs">
+          <button class="tab active" data-tab="cockpit">Cockpit</button>
+          <button class="tab" data-tab="capture">Capture</button>
+          <button class="tab" data-tab="matched">Matches</button>
+          <button class="tab" data-tab="apply">Apply</button>
+          <button class="tab" data-tab="contacts">Contacts</button>
+          <button class="tab" data-tab="settings">Settings</button>
+          <button class="tab hidden" data-tab="admin" id="adminTab">Admin</button>
+        </div>
+
+        <!-- Cockpit Panel (AM triage board across all assigned seekers) -->
+        <div class="panel active" id="panel-cockpit">
+          <div class="card">
+            <div class="card-title" style="justify-content:space-between">
+              <span>Today's Work</span>
+              <button class="btn btn-secondary btn-sm" id="refreshCockpit" style="width:auto;padding:3px 10px">Refresh</button>
+            </div>
+            <div id="cockpitTotals" class="cockpit-totals hidden"></div>
+            <div id="cockpitList" class="job-list">
+              <div class="empty-state" id="cockpitEmpty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                </svg>
+                <div>Loading your seekers…</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Capture Panel (scrape jobs from the current page) -->
+        <div class="panel" id="panel-capture">
           <div class="page-info">
             <div class="page-info-label">Current Page</div>
             <div class="page-info-title" id="pageTitle">Loading...</div>
@@ -594,6 +711,8 @@
           </div>
 
           <button class="btn btn-primary" id="saveJob">Save This Job</button>
+          <button class="btn btn-secondary" id="autofillPage" style="margin-top:8px">Autofill this page</button>
+          <button class="btn btn-secondary" id="tailorAutofillPage" style="margin-top:8px">Tailor résumé &amp; autofill</button>
 
           <div class="scrape-options">
             <div class="scrape-options-title">Quick Scrape</div>
@@ -601,6 +720,19 @@
               <button class="btn btn-secondary btn-sm" id="scrapeVisible">Visible Jobs</button>
               <button class="btn btn-secondary btn-sm" id="scrapeAll">All Jobs (Scroll)</button>
             </div>
+          </div>
+
+          <!-- Scrape review: jobs are shown here before anything is saved -->
+          <div id="scrapePreview" class="hidden" style="margin-top:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <span id="scrapePreviewTitle" style="font-size:11px;font-weight:600;color:var(--gray-700)"></span>
+              <div style="display:flex;gap:6px">
+                <button id="scrapeToggleAll" class="btn btn-secondary btn-sm" style="width:auto;padding:3px 8px;font-size:10px">Toggle all</button>
+                <button id="scrapeClear" class="btn btn-secondary btn-sm" style="width:auto;padding:3px 8px;font-size:10px">Discard</button>
+              </div>
+            </div>
+            <div id="scrapeList" class="job-list" style="max-height:260px;overflow-y:auto"></div>
+            <button id="scrapeSaveSelected" class="btn btn-primary btn-sm" style="margin-top:8px">Save selected</button>
           </div>
 
           <div id="saveStatus" class="status"></div>
@@ -622,21 +754,35 @@
           </div>
         </div>
 
-        <!-- My Jobs Panel -->
-        <div class="panel" id="panel-myjobs">
+        <!-- Apply Panel (auto-apply runner + the application queue) -->
+        <div class="panel" id="panel-apply">
           <div class="card">
-            <div class="card-title">My Jobs</div>
-            <div class="btn-group" style="margin-top:0;margin-bottom:10px">
+            <div class="card-title">Auto-Apply Runner</div>
+            <div class="checkbox-group" style="margin-bottom:10px">
+              <input type="checkbox" id="dryRun" />
+              <label for="dryRun">Dry run mode (no actual submissions)</label>
+            </div>
+            <div class="checkbox-group" style="margin-bottom:10px">
+              <input type="checkbox" id="orchestrateAll" />
+              <label for="orchestrateAll">Apply across all my seekers (cycle the whole book)</label>
+            </div>
+            <button class="btn btn-success" id="toggleRunner">Start Runner</button>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Application Queue</div>
+            <div class="btn-group" style="margin-top:0;margin-bottom:8px">
               <button class="btn btn-secondary btn-sm" id="openJobManager">Manage</button>
               <button class="btn btn-secondary btn-sm" id="refreshMyJobs">Refresh</button>
               <button class="btn btn-secondary btn-sm" id="showAppliedJobs">Show Applied</button>
             </div>
+            <div id="applySummary" style="font-size:10px;color:var(--gray-500);margin-bottom:8px"></div>
             <div id="myJobsList" class="job-list">
               <div class="empty-state" id="myJobsEmpty">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/>
                 </svg>
-                <div>No jobs in queue yet. Queue jobs from the Matched tab.</div>
+                <div>No jobs in queue yet. Queue jobs from the Matches tab.</div>
               </div>
             </div>
           </div>
@@ -665,23 +811,53 @@
           </div>
         </div>
 
-        <!-- Settings Panel -->
+        <!-- Settings Panel (session/sync + advanced) -->
         <div class="panel" id="panel-settings">
           <div class="card">
-            <div class="card-title">Automation Runner</div>
-            <div class="runner-status">
-              <div class="runner-indicator" id="runnerIndicator"></div>
-              <div class="runner-text">Runner: <strong id="runnerStatusText">Stopped</strong></div>
+            <div class="card-title">Autofill</div>
+            <div class="checkbox-group" style="margin-bottom:6px">
+              <input type="checkbox" id="autoAutofill" />
+              <label for="autoAutofill">Auto-autofill when an application page opens</label>
             </div>
-            <div class="checkbox-group" style="margin-bottom:10px">
-              <input type="checkbox" id="dryRun" />
-              <label for="dryRun">Dry run mode (no actual submissions)</label>
-            </div>
-            <button class="btn btn-success" id="toggleRunner">Start Runner</button>
-            <button class="btn btn-secondary" id="saveSessionState" style="margin-top:8px">Save Session State</button>
+            <p style="font-size:11px;color:var(--gray-500);line-height:1.4">
+              A floating JobGenius bubble appears on application pages for one-click autofill and résumé tailoring. With this on, detected forms are filled automatically — always review before submitting.
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Session &amp; Sync</div>
+            <p style="font-size:11px;color:var(--gray-500);margin-bottom:10px;line-height:1.4">
+              Save your current ATS login session so the cloud runner can apply on your behalf without re-authenticating.
+            </p>
+            <button class="btn btn-secondary" id="saveSessionState">Save Session State</button>
           </div>
 
           <div id="settingsStatus" class="status"></div>
+        </div>
+
+        <!-- Admin Panel (oversight — only revealed for admin-role AMs) -->
+        <div class="panel" id="panel-admin">
+          <div class="card">
+            <div class="card-title" style="justify-content:space-between">
+              <span>Automation Control</span>
+              <button class="btn btn-secondary btn-sm" id="refreshAdmin" style="width:auto;padding:3px 10px">Refresh</button>
+            </div>
+            <p style="font-size:10px;color:var(--gray-500);margin-bottom:8px;line-height:1.4">
+              Halting stops new applications on the next poll. Runs already in flight finish.
+            </p>
+            <div id="killSwitches"></div>
+            <div id="adminStatus" class="status"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Adapter Health (7 days)</div>
+            <div id="adapterHealth" class="job-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">QA Reviews</div>
+            <div id="qaPending" style="font-size:12px;color:var(--gray-600)">—</div>
+          </div>
         </div>
       </div>
     </div>

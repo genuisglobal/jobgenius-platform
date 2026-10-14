@@ -11,6 +11,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type"); // 'general' | 'application_question' | 'task'
 
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") ?? "25", 10) || 25));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
   let query = supabaseAdmin
     .from("conversations")
     .select(`
@@ -18,15 +23,16 @@ export async function GET(request: Request) {
       account_managers ( name, email ),
       job_posts ( title, company ),
       conversation_messages ( id, content, sender_type, read_at, created_at, attachments )
-    `)
+    `, { count: "exact" })
     .eq("job_seeker_id", auth.user.id)
-    .order("updated_at", { ascending: false });
+    .order("updated_at", { ascending: false })
+    .range(from, to);
 
   if (isConversationType(type)) {
     query = query.eq("conversation_type", type);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
 
   if (error) {
     return Response.json({ error: "Failed to fetch conversations." }, { status: 500 });
@@ -65,5 +71,13 @@ export async function GET(request: Request) {
     };
   });
 
-  return Response.json({ conversations });
+  return Response.json({
+    conversations,
+    pagination: {
+      page,
+      pageSize,
+      total: count ?? 0,
+      totalPages: Math.ceil((count ?? 0) / pageSize),
+    },
+  });
 }

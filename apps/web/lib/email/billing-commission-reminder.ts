@@ -39,7 +39,7 @@ export function billingCommissionReminderHtml({
              </div>`
           : `<p>Please arrange payment through your portal at your earliest convenience. A one-time 30-day extension is available on request if needed.</p>`
       }
-      <a href="${portalUrl}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">
+      <a href="${portalUrl}" style="display:inline-block;background:#7c3aed;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">
         Pay Commission Now
       </a>
       <p style="color:#6b7280;font-size:12px;margin-top:24px;">JobGenius Billing System</p>

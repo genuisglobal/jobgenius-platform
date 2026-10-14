@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/auth";
 import { getActorFromHeaders } from "@/lib/actor";
 import { detectAtsType } from "@/lib/apply";
+import { isActiveClient } from "@/lib/intake";
 import { verifyExtensionSession } from "@/lib/extension-auth";
-import { parseJobPost } from "@/lib/matching";
+import { parseJobPostSmart } from "@/lib/matching";
 import { normalizeJobUrl } from "@/lib/job-url";
 
 type SpyApplyPayload = {
@@ -61,6 +62,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!(await isActiveClient(jobSeekerId))) {
+      return NextResponse.json(
+        { error: "Live applications are only allowed for active clients." },
+        { status: 409 }
+      );
+    }
+
     const title = payload.job?.title?.trim();
     const rawUrl = payload.job?.url?.trim();
     if (!title || !rawUrl) {
@@ -115,7 +123,7 @@ export async function POST(request: Request) {
       await supabaseAdmin.from("job_posts").update(patch).eq("id", existingPost.id);
     } else {
       const parsedData = rawText
-        ? parseJobPost(title, company, location, rawText)
+        ? await parseJobPostSmart(title, company, location, rawText)
         : null;
 
       const { data: insertedPost, error: insertPostError } = await supabaseAdmin

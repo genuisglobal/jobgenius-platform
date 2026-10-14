@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import {
+  normalizeAssessmentQuestions,
+  type AssessmentQuestion,
+} from "@/lib/learning/assessment";
 import { useToast, ToastContainer } from "@/lib/use-toast";
+import AssessmentRunner from "./AssessmentRunner";
 
 type Lesson = {
   id: string;
@@ -13,6 +18,8 @@ type Lesson = {
     status: string;
     completed_at: string | null;
     time_spent_seconds: number;
+    quiz_score?: number | null;
+    mastery_score?: number | null;
   } | null;
   is_bookmarked: boolean;
 };
@@ -61,7 +68,7 @@ export default function LessonViewer({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "in_progress" }),
         }
-      ).catch(() => {});
+      ).catch((err) => console.error("[learning] update lesson progress failed:", err));
     }
     startTimeRef.current = Date.now();
   }, [lesson.id, trackId, isCompleted, lesson.progress?.status]);
@@ -72,7 +79,7 @@ export default function LessonViewer({
       fetch(`/api/portal/learning/${trackId}/lessons/${lesson.id}/notes`)
         .then((res) => res.json())
         .then((data) => setNotes(data.notes ?? []))
-        .catch(() => {});
+        .catch((err) => console.error("[learning] fetch notes failed:", err));
     }
   }, [showNotes, trackId, lesson.id]);
 
@@ -140,6 +147,49 @@ export default function LessonViewer({
     }
   }
 
+  async function completeQuiz(result: {
+    answers: Array<number | null>;
+    score: number;
+    correctCount: number;
+    totalQuestions: number;
+  }) {
+    const timeSpent = Math.round((Date.now() - startTimeRef.current) / 1000);
+    setSaving(true);
+    try {
+      const res = await fetch(
+        `/api/portal/learning/${trackId}/lessons/${lesson.id}/progress`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "completed",
+            time_spent_seconds: timeSpent,
+            quiz_score: result.score,
+          }),
+        }
+      );
+
+      if (res.ok) {
+        const { progress } = await res.json();
+        onLessonUpdated({
+          id: lesson.id,
+          progress,
+        });
+
+        if (progress?.status === "completed") {
+          toast(`Quiz completed: ${result.score}%`, "success");
+        } else {
+          toast(`Quiz saved: ${result.score}%`, "success");
+        }
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast(data.error || "Failed to save quiz progress", "error");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const content = lesson.content as {
     body?: string;
     summary?: string;
@@ -148,7 +198,10 @@ export default function LessonViewer({
     instructions?: string;
     starter_code?: string;
     resource_type?: string;
+    questions?: AssessmentQuestion[];
   };
+  const quizQuestions = normalizeAssessmentQuestions(content.questions ?? []);
+  const showManualComplete = lesson.content_type !== "quiz";
 
   return (
     <div>
@@ -156,7 +209,7 @@ export default function LessonViewer({
       <div className="flex items-center justify-between mb-4">
         <button
           onClick={onBack}
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="text-sm text-violet-600 hover:text-violet-800"
         >
           &larr; Back to track
         </button>
@@ -223,8 +276,8 @@ export default function LessonViewer({
               <p className="text-gray-400">No content available.</p>
             )}
             {content.summary && (
-              <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-700">
+              <div className="mt-4 p-3 bg-violet-50 rounded-lg">
+                <p className="text-sm text-violet-700">
                   <strong>Summary:</strong> {content.summary}
                 </p>
               </div>
@@ -240,7 +293,7 @@ export default function LessonViewer({
                   href={content.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-violet-50 text-violet-700 rounded-lg hover:bg-violet-100 transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -284,7 +337,7 @@ export default function LessonViewer({
             href={content.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800"
+            className="inline-flex items-center gap-2 text-violet-600 hover:text-violet-800"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -292,12 +345,36 @@ export default function LessonViewer({
             Open Resource
           </a>
         )}
+
+        {lesson.content_type === "quiz" && (
+          <div>
+            {lesson.progress?.quiz_score !== undefined && lesson.progress?.quiz_score !== null && (
+              <div className="mb-4 p-3 bg-violet-50 rounded-lg">
+                <p className="text-sm text-violet-700">
+                  <strong>Latest Score:</strong> {lesson.progress.quiz_score}%
+                </p>
+              </div>
+            )}
+            {quizQuestions.length > 0 ? (
+              <AssessmentRunner
+                title={lesson.title}
+                description="Answer every question to complete this quiz lesson. A passing result records mastery and schedules review."
+                questions={quizQuestions}
+                busy={saving}
+                ctaLabel="Save Quiz Result"
+                onComplete={completeQuiz}
+              />
+            ) : (
+              <p className="text-gray-400">Quiz questions are not available.</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="flex gap-2">
-          {!isCompleted && (
+          {!isCompleted && showManualComplete && (
             <button
               onClick={markComplete}
               disabled={saving}
@@ -326,7 +403,7 @@ export default function LessonViewer({
           {currentIndex < totalLessons - 1 && (
             <button
               onClick={() => onNavigate(currentIndex + 1)}
-              className="px-3 py-2.5 sm:py-2 text-sm text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 flex-1 sm:flex-initial"
+              className="px-3 py-2.5 sm:py-2 text-sm text-violet-600 bg-violet-50 rounded-lg hover:bg-violet-100 flex-1 sm:flex-initial"
             >
               Next
             </button>
@@ -345,13 +422,13 @@ export default function LessonViewer({
               onChange={(e) => setNewNote(e.target.value)}
               rows={3}
               placeholder="Add a note..."
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
             />
             <div className="flex justify-end mt-2">
               <button
                 onClick={saveNote}
                 disabled={saving || !newNote.trim()}
-                className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+                className="px-3 py-1.5 bg-violet-600 text-white text-sm rounded-md hover:bg-violet-700 disabled:opacity-50"
               >
                 Save Note
               </button>
@@ -361,7 +438,7 @@ export default function LessonViewer({
           {notes.length > 0 && (
             <div className="space-y-3">
               {notes.map((note) => (
-                <div key={note.id} className="border-l-2 border-blue-300 pl-3 py-1">
+                <div key={note.id} className="border-l-2 border-violet-300 pl-3 py-1">
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">
                     {note.content}
                   </p>

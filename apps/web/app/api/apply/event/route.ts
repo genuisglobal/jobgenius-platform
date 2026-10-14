@@ -1,4 +1,4 @@
-import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
+import { requireAMAccessToSeeker } from "@/lib/am-access";
 import { getActorFromHeaders } from "@/lib/actor";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -50,22 +50,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const amResult = await getAccountManagerFromRequest(request.headers);
-  if ("error" in amResult) {
-    return Response.json({ success: false, error: amResult.error }, { status: 401 });
-  }
-
-  const hasAccess = await hasJobSeekerAccess(
-    amResult.accountManager.id,
-    run.job_seeker_id
-  );
-
-  if (!hasAccess) {
-    return Response.json(
-      { success: false, error: "Not authorized for this job seeker." },
-      { status: 403 }
-    );
-  }
+  const access = await requireAMAccessToSeeker(request.headers, run.job_seeker_id);
+  if (!access.ok) return access.response;
 
   if (requiresClaimToken(request.headers)) {
     if (!payload.claim_token) {
@@ -82,7 +68,7 @@ export async function POST(request: Request) {
     }
   }
 
-  await supabaseServer.from("apply_run_events").insert({
+  const { error: runEventError } = await supabaseServer.from("apply_run_events").insert({
     run_id: run.id,
     level: payload.level ?? "INFO",
     event_type: payload.event_type,
@@ -95,21 +81,33 @@ export async function POST(request: Request) {
     },
   });
 
+  if (runEventError) {
+    console.error("[apply:event] failed to insert run event:", runEventError);
+  }
+
   if (payload.step || payload.message) {
-    await supabaseServer.from("application_step_events").insert({
+    const { error: stepError } = await supabaseServer.from("application_step_events").insert({
       run_id: run.id,
       step: payload.step ?? run.current_step,
       event_type: payload.event_type,
       message: payload.message ?? null,
       meta: payload.payload ?? {},
     });
+
+    if (stepError) {
+      console.error("[apply:event] failed to insert step event:", stepError);
+    }
   }
 
   if (payload.last_seen_url) {
-    await supabaseServer
+    const { error: urlUpdateError } = await supabaseServer
       .from("application_runs")
       .update({ last_seen_url: payload.last_seen_url, updated_at: new Date().toISOString() })
       .eq("id", run.id);
+
+    if (urlUpdateError) {
+      console.error("[apply:event] failed to update last_seen_url:", urlUpdateError);
+    }
   }
 
   return Response.json({ success: true });

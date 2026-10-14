@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, supabaseAdmin } from "@/lib/auth";
 import { isAdminRole } from "@/lib/auth/roles";
 import PerformanceClient from "./PerformanceClient";
+import { SUCCESSFUL_APPLICATION_STATUSES } from "@/lib/application-stats";
 
 export default async function PerformancePage() {
   const user = await getCurrentUser();
@@ -38,10 +39,10 @@ export default async function PerformancePage() {
     supabaseAdmin.from("interviews").select("id", { count: "exact", head: true }).eq("account_manager_id", amId).gte("scheduled_at", monthStart),
     supabaseAdmin.from("interviews").select("id", { count: "exact", head: true }).eq("account_manager_id", amId),
     seekerIds.length > 0
-      ? supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).gte("applied_at", monthStart).in("job_seeker_id", seekerIds)
+      ? supabaseAdmin.from("application_runs").select("id", { count: "exact", head: true }).in("status", SUCCESSFUL_APPLICATION_STATUSES).gte("applied_at", monthStart).in("job_seeker_id", seekerIds)
       : Promise.resolve({ count: 0, data: null, error: null }),
     seekerIds.length > 0
-      ? supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).in("job_seeker_id", seekerIds)
+      ? supabaseAdmin.from("application_runs").select("id", { count: "exact", head: true }).in("status", SUCCESSFUL_APPLICATION_STATUSES).in("job_seeker_id", seekerIds)
       : Promise.resolve({ count: 0, data: null, error: null }),
     supabaseAdmin.from("interviews").select("job_seeker_id, scheduled_at").eq("account_manager_id", amId).order("scheduled_at", { ascending: true }).limit(200),
   ]);
@@ -77,7 +78,9 @@ export default async function PerformancePage() {
   // Get AM display name
   const { data: amData } = await supabaseAdmin
     .from("account_managers")
-    .select("full_name")
+    // `name`, not full_name — selecting the latter failed the query and
+    // silently fell back to the email address below.
+    .select("name")
     .eq("id", amId)
     .single();
 
@@ -93,7 +96,7 @@ export default async function PerformancePage() {
         applications_all_time: applicationsAllTime ?? 0,
         avg_days_to_first_interview: avgDaysToFirstInterview,
       }}
-      amName={amData?.full_name ?? user.email ?? ""}
+      amName={amData?.name ?? user.email ?? ""}
     />
   );
 }

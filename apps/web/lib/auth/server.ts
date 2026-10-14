@@ -647,9 +647,18 @@ export async function refreshSession(refreshToken: string): Promise<AuthResult> 
 /**
  * Initiate password reset
  */
-export async function initiatePasswordReset(email: string): Promise<{ success: boolean; error?: string }> {
+export async function initiatePasswordReset(
+  email: string,
+  redirectTo?: string
+): Promise<{ success: boolean; error?: string }> {
+  // Prefer an explicit per-request origin (passed by the API route); fall back
+  // to NEXT_PUBLIC_APP_URL, then the production URL. The path must match the
+  // actual route — `/reset-password`, not `/auth/reset-password`.
+  const fallbackBase =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "https://job-genius.com";
+  const target = redirectTo ?? `${fallbackBase}/reset-password`;
   const { error } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password`,
+    redirectTo: target,
   });
 
   if (error) {

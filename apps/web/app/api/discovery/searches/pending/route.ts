@@ -36,6 +36,7 @@ type JobSourceRow = {
   requires_auth: boolean | null;
   auth_config: Record<string, unknown> | null;
   adapter_config: Record<string, unknown> | null;
+  discovery_config: Record<string, unknown> | null;
   selectors: Record<string, unknown> | null;
 };
 
@@ -121,6 +122,7 @@ export async function GET(request: Request) {
         requires_auth,
         auth_config,
         adapter_config,
+        discovery_config,
         selectors
       )
     `)

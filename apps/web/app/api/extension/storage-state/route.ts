@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/auth";
 import { verifyExtensionSession } from "@/lib/extension-auth";
+import { serializeState, parseState } from "@/lib/state-crypto";
 
 type StorageStatePayload = {
   job_seeker_id?: string;
@@ -149,7 +150,8 @@ async function loadExistingStorageState(storagePath: string) {
 
   try {
     const raw = await data.text();
-    return normalizeStorageState(JSON.parse(raw));
+    const parsed = parseState(raw);
+    return parsed ? normalizeStorageState(parsed) : null;
   } catch {
     return null;
   }
@@ -208,7 +210,9 @@ export async function POST(request: Request) {
       origins: mergeOrigins(existingState?.origins, incomingState.origins),
     };
 
-    const body = Buffer.from(JSON.stringify(mergedState));
+    // Encrypt at rest when STATE_ENCRYPTION_KEY is configured (ATS session
+    // cookies); falls back to plaintext when unset, preserving prior behaviour.
+    const body = Buffer.from(serializeState(mergedState));
     const { error: uploadError } = await supabaseAdmin.storage
       .from(BUCKET_ID)
       .upload(storagePath, body, {

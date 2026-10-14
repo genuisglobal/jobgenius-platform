@@ -11,5 +11,6 @@ import './arbeitnow.js';
 import './greenhouse-feed.js';
 import './lever-feed.js';
 import './ashby-feed.js';
+import './workday-feed.js';
+import './smartrecruiters-feed.js';
 import './hn-hiring.js';
-

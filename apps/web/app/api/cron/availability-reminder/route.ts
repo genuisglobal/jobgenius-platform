@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
   // (No separate table needed — the portal detects "not confirmed this week" from the GET route.)
 
   // Log this cron run
-  await supabaseAdmin.from("cron_runs").insert({
+  const { error: cronLogError } = await supabaseAdmin.from("cron_runs").insert({
     status: "success",
     triggered_by: "vercel-cron",
     completed_at: new Date().toISOString(),
@@ -75,6 +75,10 @@ export async function GET(req: NextRequest) {
     inserted: needsReminder.length,
     source_counts: { availability_reminder: needsReminder.length },
   });
+
+  if (cronLogError) {
+    console.error("[cron:availability-reminder] failed to log cron run:", cronLogError);
+  }
 
   return NextResponse.json({
     notified: needsReminder.length,

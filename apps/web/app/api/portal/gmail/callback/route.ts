@@ -101,10 +101,14 @@ export async function GET(request: Request) {
     }
 
     // Update the seeker's gmail_address field
-    await supabaseServer
+    const { error: gmailUpdateError } = await supabaseServer
       .from("job_seekers")
       .update({ gmail_address: emailAddress })
       .eq("id", seekerId);
+
+    if (gmailUpdateError) {
+      console.error("[portal:gmail] failed to update gmail_address:", gmailUpdateError);
+    }
 
     return NextResponse.redirect(
       `${profileUrl}?gmail=connected&email=${encodeURIComponent(emailAddress)}`

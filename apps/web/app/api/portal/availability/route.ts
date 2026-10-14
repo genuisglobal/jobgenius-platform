@@ -50,7 +50,12 @@ export async function POST(req: NextRequest) {
   }
 
   const seekerId = auth.user.id;
-  const body = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { timezone, slots } = body as {
     timezone: string;
     slots: { day_of_week: number; start_time: string; end_time: string }[];

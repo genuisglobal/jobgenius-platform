@@ -11,7 +11,8 @@ export type BackgroundJobType =
   | "MATCH_NETWORK_CONTACTS"
   | "VOICE_DISPATCH"
   | "VOICE_RETRY"
-  | "VOICE_FOLLOWUP";
+  | "VOICE_FOLLOWUP"
+  | "DIAGNOSE_FAILURE";
 
 export type BackgroundJobPayload = {
   job_post_id?: string;
@@ -25,6 +26,7 @@ export type BackgroundJobPayload = {
   voice_call_id?: string;
   lead_submission_id?: string;
   call_type?: string;
+  run_id?: string;
 };
 
 type EnqueueOptions = {

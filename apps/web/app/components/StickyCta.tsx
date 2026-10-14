@@ -21,13 +21,13 @@ export default function StickyCta() {
     >
       <div className="flex items-center gap-3 bg-gray-900/95 backdrop-blur-sm text-white px-5 py-3 rounded-2xl shadow-2xl border border-white/10 whitespace-nowrap">
         <span className="text-sm font-medium text-gray-300 hidden sm:block">
-          Ready to stop applying?
+          Free account first. Review the strategy before paid activation.
         </span>
         <Link
           href="/signup"
           className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors"
         >
-          Get Started &rarr;
+          Create free account &rarr;
         </Link>
       </div>
     </div>

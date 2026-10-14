@@ -99,6 +99,12 @@ export const linkedinAdapter = {
   },
   async confirm(page) {
     const text = (await page.textContent("body"))?.toLowerCase() ?? "";
-    return text.includes("thank you") || text.includes("submitted");
+    return (
+      text.includes("thank you") ||
+      text.includes("submitted") ||
+      text.includes("application submitted") ||
+      text.includes("application sent") ||
+      text.includes("your application was sent")
+    );
   },
 };

@@ -1,5 +1,5 @@
 import { supabaseServer } from "@/lib/supabase/server";
-import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
+import { requireAMAccessToSeeker } from "@/lib/am-access";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -25,22 +25,8 @@ export async function GET(request: Request) {
     );
   }
 
-  const amResult = await getAccountManagerFromRequest(request.headers);
-  if ("error" in amResult) {
-    return Response.json({ success: false, error: amResult.error }, { status: 401 });
-  }
-
-  const hasAccess = await hasJobSeekerAccess(
-    amResult.accountManager.id,
-    run.job_seeker_id
-  );
-
-  if (!hasAccess) {
-    return Response.json(
-      { success: false, error: "Not authorized for this job seeker." },
-      { status: 403 }
-    );
-  }
+  const access = await requireAMAccessToSeeker(request.headers, run.job_seeker_id);
+  if (!access.ok) return access.response;
 
   const { data: events, error: eventsError } = await supabaseServer
     .from("application_step_events")

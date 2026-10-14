@@ -206,7 +206,7 @@ export default function ConfirmClient({
               onClick={() => setSelectedSlotId(offer.slot_id)}
               style={{
                 padding: "12px 16px",
-                border: isSelected ? "2px solid #2563eb" : "1px solid #e5e7eb",
+                border: isSelected ? "2px solid #7c3aed" : "1px solid #e5e7eb",
                 borderRadius: 8,
                 background: isSelected ? "#eff6ff" : "#fff",
                 cursor: "pointer",
@@ -230,7 +230,7 @@ export default function ConfirmClient({
         style={{
           marginTop: 16,
           padding: "10px 24px",
-          background: selectedSlotId ? "#2563eb" : "#9ca3af",
+          background: selectedSlotId ? "#7c3aed" : "#9ca3af",
           color: "#fff",
           border: "none",
           borderRadius: 6,

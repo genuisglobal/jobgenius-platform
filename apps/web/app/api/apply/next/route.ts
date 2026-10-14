@@ -3,8 +3,18 @@ import {
   getErrorCodeHint,
   getNextStep,
 } from "@/lib/apply";
+import {
+  cancelDuplicateRun,
+  findRecentDuplicateRun,
+} from "@/lib/apply/duplicate-check";
+import {
+  GLOBAL_APPLY_KEY,
+  atsPolicyKey,
+  getDisabledPolicyKeys,
+} from "@/lib/apply/kill-switch";
+import { checkSeekerVelocity } from "@/lib/apply/velocity";
 import { resolveJobTargetUrl } from "@/lib/job-url";
-import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
+import { requireAMAccessToSeeker } from "@/lib/am-access";
 import { getActorFromHeaders } from "@/lib/actor";
 import { supabaseServer } from "@/lib/supabase/server";
 import { randomUUID } from "crypto";
@@ -281,27 +291,13 @@ export async function GET(request: Request) {
     );
   }
 
-  const amResult = await getAccountManagerFromRequest(request.headers);
-  if ("error" in amResult) {
-    return Response.json({ success: false, error: amResult.error }, { status: 401 });
-  }
-
-  const hasAccess = await hasJobSeekerAccess(
-    amResult.accountManager.id,
-    jobSeekerId
-  );
-
-  if (!hasAccess) {
-    return Response.json(
-      { success: false, error: "Not authorized for this job seeker." },
-      { status: 403 }
-    );
-  }
+  const access = await requireAMAccessToSeeker(request.headers, jobSeekerId);
+  if (!access.ok) return access.response;
 
   const { data: assignments, error: assignmentsError } = await supabaseServer
     .from("job_seeker_assignments")
     .select("job_seeker_id")
-    .eq("account_manager_id", amResult.accountManager.id);
+    .eq("account_manager_id", access.amId);
 
   if (assignmentsError) {
     return Response.json(
@@ -335,6 +331,36 @@ export async function GET(request: Request) {
       reason: "MAX_CONCURRENCY",
       limit: 5,
     });
+  }
+
+  // Kill switches (mig 108): stop handing out runs the moment a switch is
+  // flipped. Applies even to explicit resumes — a halt is a halt.
+  const disabledPolicies = await getDisabledPolicyKeys();
+  if (disabledPolicies.has(GLOBAL_APPLY_KEY)) {
+    return Response.json({
+      success: false,
+      blocked: true,
+      reason: "AUTOMATION_HALTED",
+      policy_key: GLOBAL_APPLY_KEY,
+    });
+  }
+
+  // Per-seeker velocity policy (daily cap / pacing / quiet hours, mig 104).
+  // Only on the automatic path: an AM explicitly requesting a specific run
+  // (preferredRunId, e.g. resuming a paused application) is a deliberate
+  // human action and bypasses the throttle.
+  if (!preferredRunId) {
+    const velocity = await checkSeekerVelocity(jobSeekerId);
+    if (!velocity.allowed) {
+      return Response.json({
+        success: false,
+        blocked: true,
+        reason: velocity.reason,
+        ...(velocity.retryAfterMs
+          ? { retry_after_seconds: Math.ceil(velocity.retryAfterMs / 1000) }
+          : {}),
+      });
+    }
   }
 
   let nextRunQuery = supabaseServer
@@ -372,10 +398,21 @@ export async function GET(request: Request) {
     return Response.json({ success: true, status: "IDLE" });
   }
 
+  // ATS-level kill switch: refuse before locking so the run stays claimable
+  // by nothing until the switch is re-enabled.
+  if (disabledPolicies.has(atsPolicyKey(nextRun.ats_type))) {
+    return Response.json({
+      success: false,
+      blocked: true,
+      reason: "ATS_HALTED",
+      policy_key: atsPolicyKey(nextRun.ats_type),
+    });
+  }
+
   const nowIso = new Date().toISOString();
   const claimToken = randomUUID();
   const actor = getActorFromHeaders(request.headers);
-  const lockedBy = `${actor}:${amResult.accountManager.email}`;
+  const lockedBy = `${actor}:${access.amEmail}`;
 
   const { data: lockedRun, error: lockError } = await supabaseServer
     .from("application_runs")
@@ -394,6 +431,30 @@ export async function GET(request: Request) {
 
   if (lockError || !lockedRun) {
     return Response.json({ success: true, status: "IDLE" });
+  }
+
+  // Fuzzy duplicate gate (reposted job under a new job_post_id). Cancel the
+  // run and tell the poller why; the next poll simply claims the next run.
+  // Skipped for explicit preferredRunId requests — an AM resuming a specific
+  // run has already made the call.
+  if (!preferredRunId) {
+    const duplicate = await findRecentDuplicateRun(
+      jobSeekerId,
+      lockedRun.job_post_id as string
+    );
+    if (duplicate) {
+      await cancelDuplicateRun(
+        { id: lockedRun.id, queue_id: lockedRun.queue_id },
+        duplicate,
+        actor
+      );
+      return Response.json({
+        success: false,
+        blocked: true,
+        reason: "DUPLICATE_APPLICATION",
+        duplicate_run_id: duplicate.duplicate_run_id,
+      });
+    }
   }
 
   if (lockedRun.queue_id) {

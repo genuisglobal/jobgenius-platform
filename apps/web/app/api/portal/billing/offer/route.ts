@@ -8,15 +8,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const body = await request.json();
-  const { company, role, baseSalary, offerAcceptedAt, startDate, notes } = body as {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { company, role, baseSalary, guaranteedCompensation, offerAcceptedAt, startDate, notes } = body as {
     company: string;
     role: string;
     baseSalary: number;
+    guaranteedCompensation?: number;
     offerAcceptedAt: string;
     startDate?: string;
     notes?: string;
   };
+
+  const guaranteed = Number.isFinite(Number(guaranteedCompensation)) ? Number(guaranteedCompensation) : 0;
 
   if (!company || !role || !baseSalary || !offerAcceptedAt) {
     return NextResponse.json(
@@ -36,6 +44,7 @@ export async function POST(request: Request) {
       company,
       role,
       base_salary: baseSalary,
+      guaranteed_compensation: guaranteed,
       reported_by: "job_seeker",
       reported_by_user_id: auth.user.id,
       offer_accepted_at: offerAcceptedAt,
@@ -68,7 +77,8 @@ export async function POST(request: Request) {
   if (assignment?.account_manager_id) {
     const { data: am } = await supabaseAdmin
       .from("account_managers")
-      .select("email, full_name")
+      // account_managers spells it `name`; only job_seekers has full_name.
+      .select("email, name")
       .eq("id", assignment.account_manager_id)
       .single();
 
@@ -77,7 +87,7 @@ export async function POST(request: Request) {
         to: am.email,
         subject: `Job Offer Reported: ${seeker?.full_name ?? "Client"} at ${company}`,
         html: `
-          <p>Hello ${am.full_name},</p>
+          <p>Hello ${am.name},</p>
           <p><strong>${seeker?.full_name ?? "Your client"}</strong> has reported a job offer:</p>
           <ul>
             <li><strong>Company:</strong> ${company}</li>

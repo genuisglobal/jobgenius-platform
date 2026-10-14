@@ -19,7 +19,7 @@ export default async function SavedAnswersPage() {
         <div>
           <Link
             href="/portal/profile"
-            className="text-sm text-blue-600 hover:text-blue-800"
+            className="text-sm text-violet-600 hover:text-violet-800"
           >
             &larr; Back to Profile
           </Link>

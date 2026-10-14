@@ -26,18 +26,27 @@ export async function GET(req: NextRequest) {
     }
 
     // Mark AM messages as read
-    await supabaseAdmin
+    const { error: markReadError } = await supabaseAdmin
       .from("conversation_messages")
       .update({ read_at: new Date().toISOString() })
       .eq("conversation_id", conversationId)
       .eq("sender_type", "job_seeker")
       .is("read_at", null);
 
+    if (markReadError) {
+      console.error("[am:inbox] failed to mark messages read:", markReadError);
+    }
+
     return NextResponse.json({ messages: messages ?? [] });
   }
 
   // Return all conversations for this AM with latest message + unread count
-  const { data: conversations, error: convErr } = await supabaseAdmin
+  const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get("pageSize") ?? "25", 10) || 25));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const { data: conversations, error: convErr, count: convCount } = await supabaseAdmin
     .from("conversations")
     .select(`
       id,
@@ -47,10 +56,11 @@ export async function GET(req: NextRequest) {
       updated_at,
       job_seeker_id,
       job_seekers!inner(id, full_name, profile_photo_url)
-    `)
+    `, { count: "exact" })
     .eq("account_manager_id", amId)
     .eq("status", "open")
-    .order("updated_at", { ascending: false });
+    .order("updated_at", { ascending: false })
+    .range(from, to);
 
   if (convErr) {
     return NextResponse.json({ error: "Failed to load inbox" }, { status: 500 });
@@ -121,5 +131,13 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  return NextResponse.json({ conversations: result });
+  return NextResponse.json({
+    conversations: result,
+    pagination: {
+      page,
+      pageSize,
+      total: convCount ?? 0,
+      totalPages: Math.ceil((convCount ?? 0) / pageSize),
+    },
+  });
 }

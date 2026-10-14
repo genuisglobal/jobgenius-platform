@@ -8,18 +8,25 @@ export default async function AdminPage() {
   const isSuperAdmin = user.role === "superadmin";
 
   // Get counts
-  const { count: amCount } = await supabaseAdmin
+  const { count: activeAmCount } = await supabaseAdmin
     .from("account_managers")
-    .select("id", { count: "exact", head: true });
+    .select("id", { count: "exact", head: true })
+    .not("auth_id", "is", null);
 
   const { count: adminCount } = await supabaseAdmin
     .from("account_managers")
     .select("id", { count: "exact", head: true })
+    .not("auth_id", "is", null)
     .in("role", ["admin", "superadmin"]);
 
   const { count: seekerCount } = await supabaseAdmin
     .from("job_seekers")
     .select("id", { count: "exact", head: true });
+
+  const { count: activeSeekerCount } = await supabaseAdmin
+    .from("job_seekers")
+    .select("id", { count: "exact", head: true })
+    .not("auth_id", "is", null);
 
   const { count: assignedCount } = await supabaseAdmin
     .from("job_seeker_assignments")
@@ -36,10 +43,15 @@ export default async function AdminPage() {
     .is("job_seeker_id", null)
     .eq("enabled", true);
 
-  const { count: unassignedCount } = await supabaseAdmin
-    .from("job_seekers")
+  const { count: hiringRequestCount } = await supabaseAdmin
+    .from("recruiter_role_requests")
     .select("id", { count: "exact", head: true })
-    .is("id", null); // This won't work, need a different approach
+    .not("status", "in", "(closed,rejected)");
+
+  const { count: leadQueueCount } = await supabaseAdmin
+    .from("lead_intake_submissions")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["new", "qualified", "nurture"]);
 
   // Get unassigned seekers count properly
   const { data: allSeekerIds } = await supabaseAdmin
@@ -83,14 +95,18 @@ export default async function AdminPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-7">
         <Link
           href="/dashboard/admin/accounts"
           className="bg-white rounded-lg shadow p-5 hover:shadow-md transition-shadow"
         >
-          <div className="text-sm font-medium text-gray-500">Account Managers</div>
-          <div className="mt-1 text-3xl font-bold text-gray-900">{amCount ?? 0}</div>
-          <div className="text-xs text-gray-400 mt-1">{adminCount ?? 0} admins</div>
+          <div className="text-sm font-medium text-gray-500">User Accounts</div>
+          <div className="mt-1 text-3xl font-bold text-gray-900">
+            {(activeAmCount ?? 0) + (activeSeekerCount ?? 0)}
+          </div>
+          <div className="text-xs text-gray-400 mt-1">
+            {activeAmCount ?? 0} AMs | {adminCount ?? 0} admins
+          </div>
         </Link>
 
         <Link
@@ -98,7 +114,7 @@ export default async function AdminPage() {
           className="bg-white rounded-lg shadow p-5 hover:shadow-md transition-shadow"
         >
           <div className="text-sm font-medium text-gray-500">Job Seekers</div>
-          <div className="mt-1 text-3xl font-bold text-blue-600">{seekerCount ?? 0}</div>
+          <div className="mt-1 text-3xl font-bold text-violet-600">{seekerCount ?? 0}</div>
         </Link>
 
         <Link
@@ -125,6 +141,24 @@ export default async function AdminPage() {
           <div className="mt-1 text-3xl font-bold text-indigo-600">{discoveryPolicyCount ?? 0}</div>
           <div className="text-xs text-gray-400 mt-1">{activeGeneratedSearchCount ?? 0} active searches</div>
         </Link>
+
+        <Link
+          href="/dashboard/admin/leads"
+          className="bg-white rounded-lg shadow p-5 hover:shadow-md transition-shadow"
+        >
+          <div className="text-sm font-medium text-gray-500">Lead Queue</div>
+          <div className="mt-1 text-3xl font-bold text-fuchsia-600">{leadQueueCount ?? 0}</div>
+          <div className="text-xs text-gray-400 mt-1">Website and imported leads</div>
+        </Link>
+
+        <Link
+          href="/dashboard/admin/hiring-partners"
+          className="bg-white rounded-lg shadow p-5 hover:shadow-md transition-shadow"
+        >
+          <div className="text-sm font-medium text-gray-500">Hiring Requests</div>
+          <div className="mt-1 text-3xl font-bold text-violet-600">{hiringRequestCount ?? 0}</div>
+          <div className="text-xs text-gray-400 mt-1">Recruiter and agency demand</div>
+        </Link>
       </div>
 
       {/* Quick Actions */}
@@ -132,14 +166,44 @@ export default async function AdminPage() {
         <h2 className="font-semibold text-gray-900 mb-4">Quick Actions</h2>
         <div className="flex flex-wrap gap-3">
           <Link
+            href="/dashboard/admin/leads"
+            className="px-4 py-2 bg-fuchsia-600 text-white text-sm font-medium rounded-lg hover:bg-fuchsia-700 transition-colors"
+          >
+            Review Lead Queue
+          </Link>
+          <Link
+            href="/dashboard/admin/hiring-partners"
+            className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 transition-colors"
+          >
+            Review Hiring Requests
+          </Link>
+          <Link
+            href="/dashboard/admin/intake"
+            className="px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 transition-colors"
+          >
+            Review Intake Queue
+          </Link>
+          <Link
+            href="/dashboard/admin/capacity"
+            className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+          >
+            Adjust AM Capacity
+          </Link>
+          <Link
             href="/dashboard/admin/accounts?action=create"
             className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
           >
             Create Account Manager
           </Link>
           <Link
+            href="/dashboard/admin/accounts"
+            className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Manage User Accounts
+          </Link>
+          <Link
             href="/dashboard/admin/assignments"
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 transition-colors"
           >
             Manage Assignments
           </Link>
@@ -181,7 +245,7 @@ export default async function AdminPage() {
         <div className="bg-white rounded-lg shadow">
           <div className="px-5 py-4 border-b flex items-center justify-between">
             <h2 className="font-semibold text-gray-900">Recent Account Managers</h2>
-            <Link href="/dashboard/admin/accounts" className="text-sm text-blue-600 hover:text-blue-800">
+            <Link href="/dashboard/admin/accounts" className="text-sm text-violet-600 hover:text-violet-800">
               View all
             </Link>
           </div>
@@ -200,7 +264,7 @@ export default async function AdminPage() {
                       am.role === "superadmin"
                         ? "bg-purple-100 text-purple-800"
                         : am.role === "admin"
-                        ? "bg-blue-100 text-blue-800"
+                        ? "bg-violet-100 text-violet-800"
                         : "bg-gray-100 text-gray-600"
                     }`}
                   >
@@ -216,7 +280,7 @@ export default async function AdminPage() {
         <div className="bg-white rounded-lg shadow">
           <div className="px-5 py-4 border-b flex items-center justify-between">
             <h2 className="font-semibold text-gray-900">Recent Job Seekers</h2>
-            <Link href="/dashboard/admin/job-seekers" className="text-sm text-blue-600 hover:text-blue-800">
+            <Link href="/dashboard/admin/job-seekers" className="text-sm text-violet-600 hover:text-violet-800">
               View all
             </Link>
           </div>

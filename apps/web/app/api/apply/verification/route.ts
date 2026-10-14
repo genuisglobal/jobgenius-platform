@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     console.error("Verification code fetch error:", err);
 
     // Update connection with error
-    await supabaseServer
+    const { error: connUpdateError } = await supabaseServer
       .from("seeker_email_connections")
       .update({
         last_error:
@@ -89,6 +89,10 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", connection.id);
+
+    if (connUpdateError) {
+      console.error("[apply:verification] failed to update connection error:", connUpdateError);
+    }
 
     return NextResponse.json({
       codes: [],

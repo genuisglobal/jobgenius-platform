@@ -1,0 +1,70 @@
+name: Refresh + Promote + Match
+
+# Runs the FULL job pipeline end-to-end so seekers' matched jobs stay fresh:
+#   1. refresh-jobs - pull from external APIs + crawl career pages -> external_jobs (staging)
+#   2. promote-jobs - promote fresh staged jobs -> job_posts (the Job Bank)
+#   3. match/run-all - score the Job Bank against every active seeker -> job_match_scores
+#
+# Without steps 2 and 3 on a schedule, refreshed jobs never reach seekers and the
+# daily clean-matches cron drains existing matches. This keeps the whole chain moving.
+
+on:
+  schedule:
+    # Every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: "0 */6 * * *"
+  workflow_dispatch: # Allow manual runs from the Actions UI
+
+# Steps run sequentially in one job so promotion always sees the latest refresh,
+# and matching always sees the newly promoted jobs.
+jobs:
+  pipeline:
+    name: Full job pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Without pipefail, `curl ... | jq .` reports the exit status of jq, so a
+    # failed curl still passes the step and the whole run goes green. That masked
+    # a three-month outage once already - do not drop this.
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+    env:
+      WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
+    steps:
+      - name: 0. Verify required secrets are configured
+        run: |
+          missing=()
+          [ -n "${WEB_BASE_URL}" ] || missing+=("WEB_BASE_URL")
+          [ -n "${CRON_SECRET}" ] || missing+=("CRON_SECRET")
+          [ -n "${OPS_API_KEY}" ] || missing+=("OPS_API_KEY")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing repository secrets: ${missing[*]}"
+            echo "Set them under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: 1. Refresh external jobs (-> external_jobs staging)
+        run: |
+          echo "Refreshing external jobs..."
+          curl -sS -f -L -X GET \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${WEB_BASE_URL}/api/cron/refresh-jobs" | jq .
+
+      - name: 2. Promote fresh staged jobs (-> job_posts Job Bank)
+        run: |
+          echo "Promoting fresh staged jobs..."
+          curl -sS -f -L -X POST \
+            -H "x-ops-key: ${OPS_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"auto": true}' \
+            "${WEB_BASE_URL}/api/admin/promote-jobs" | jq .
+
+      - name: 3. Re-run matching for all active seekers (-> job_match_scores)
+        run: |
+          echo "Running the sorting agent for all active seekers..."
+          curl -sS -f -L -X POST \
+            -H "x-ops-key: ${OPS_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            "${WEB_BASE_URL}/api/match/run-all" | jq .

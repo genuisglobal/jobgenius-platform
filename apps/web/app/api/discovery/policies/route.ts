@@ -173,7 +173,7 @@ export async function POST(request: Request) {
 
   const { data: sourceRows, error: sourceError } = await supabaseAdmin
     .from("job_sources")
-    .select("name")
+    .select("name, source_type")
     .in("name", sourceNames);
 
   if (sourceError) {
@@ -185,12 +185,25 @@ export async function POST(request: Request) {
 
   const existingSources = new Set((sourceRows ?? []).map((row) => row.name));
   const unknownSources = sourceNames.filter((name) => !existingSources.has(name));
+  const unsupportedSources = (sourceRows ?? [])
+    .filter((row) => row.source_type === "feed")
+    .map((row) => row.name);
 
   if (unknownSources.length > 0) {
     return Response.json(
       {
         success: false,
         error: `Unknown source(s): ${unknownSources.join(", ")}`,
+      },
+      { status: 400 }
+    );
+  }
+
+  if (unsupportedSources.length > 0) {
+    return Response.json(
+      {
+        success: false,
+        error: `Policy generation does not support company-specific ATS feed source(s): ${unsupportedSources.join(", ")}.`,
       },
       { status: 400 }
     );

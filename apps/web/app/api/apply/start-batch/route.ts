@@ -1,6 +1,7 @@
 import { detectAtsType, getInitialStep } from "@/lib/apply";
 import { getActorFromHeaders } from "@/lib/actor";
 import { getAccountManagerFromRequest, isRunnerAccountManager } from "@/lib/am-access";
+import { isActiveClient } from "@/lib/intake";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type StartBatchPayload = {
@@ -152,6 +153,11 @@ export async function POST(request: Request) {
   const errors: string[] = [];
 
   for (const item of queueItems) {
+    if (!(await isActiveClient(item.job_seeker_id))) {
+      blocked++;
+      continue;
+    }
+
     if (item.status !== "QUEUED") {
       continue;
     }
@@ -208,25 +214,37 @@ export async function POST(request: Request) {
       continue;
     }
 
-    await supabaseServer
+    const { error: queueUpdateErr } = await supabaseServer
       .from("application_queue")
       .update({ status: "READY", category: "in_progress", updated_at: nowIso })
       .eq("id", item.id);
 
-    await supabaseServer.from("application_step_events").insert({
+    if (queueUpdateErr) {
+      console.error("[apply:start-batch] failed to update queue status:", queueUpdateErr);
+    }
+
+    const { error: stepErr } = await supabaseServer.from("application_step_events").insert({
       run_id: createdRun.id,
       step: initialStep,
       event_type: "READY",
       message: "Run ready for execution (batch start).",
     });
 
-    await supabaseServer.from("apply_run_events").insert({
+    if (stepErr) {
+      console.error("[apply:start-batch] failed to insert step event:", stepErr);
+    }
+
+    const { error: runEventErr } = await supabaseServer.from("apply_run_events").insert({
       run_id: createdRun.id,
       level: "INFO",
       event_type: "READY",
       actor,
       payload: { step: initialStep, batch: true },
     });
+
+    if (runEventErr) {
+      console.error("[apply:start-batch] failed to insert run event:", runEventErr);
+    }
 
     started++;
     currentRunning++;

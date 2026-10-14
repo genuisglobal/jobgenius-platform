@@ -290,7 +290,14 @@ async function startRunFromQueue(queueId) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !data.run_id) {
-    throw new Error(data.error || "Failed to start run.");
+    if (data?.blocked && data?.reason === "DUPLICATE_APPLICATION") {
+      throw new Error(
+        `Already applied to ${data.duplicate_job?.company ?? "this job"} recently — skipped to avoid a duplicate.`
+      );
+    }
+    throw new Error(
+      data.error || (data?.blocked ? `Blocked: ${data.reason}.` : "Failed to start run.")
+    );
   }
 
   return data.run_id;

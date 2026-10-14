@@ -1,4 +1,4 @@
-import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
+import { requireAMAccessToSeeker } from "@/lib/am-access";
 import { supabaseServer } from "@/lib/supabase/server";
 import { sendAndLogEmail } from "@/lib/messaging/send-and-log";
 import { shortlistNotificationEmail } from "@/lib/email-templates/shortlist-notification";
@@ -34,11 +34,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const amResult = await getAccountManagerFromRequest(request.headers);
-  if ("error" in amResult) {
-    return Response.json({ success: false, error: amResult.error }, { status: 401 });
-  }
-
   const { data: queueItem, error: queueError } = await supabaseServer
     .from("application_queue")
     .select("id, job_seeker_id, job_post_id, status")
@@ -49,17 +44,8 @@ export async function POST(request: Request) {
     return Response.json({ success: false, error: "Queue item not found." }, { status: 404 });
   }
 
-  const hasAccess = await hasJobSeekerAccess(
-    amResult.accountManager.id,
-    queueItem.job_seeker_id
-  );
-
-  if (!hasAccess) {
-    return Response.json(
-      { success: false, error: "Not authorized for this job seeker." },
-      { status: 403 }
-    );
-  }
+  const access = await requireAMAccessToSeeker(request.headers, queueItem.job_seeker_id);
+  if (!access.ok) return access.response;
 
   const nowIso = new Date().toISOString();
 
@@ -113,7 +99,7 @@ export async function POST(request: Request) {
           job_seeker_id: queueItem.job_seeker_id,
           job_post_id: queueItem.job_post_id,
           application_queue_id: queueItem.id,
-        }).catch(() => {});
+        }).catch((err) => console.error("[queue:status] activity log failed:", err));
       }
 
       if (payload.status === "REJECTED") {
@@ -132,7 +118,7 @@ export async function POST(request: Request) {
           job_seeker_id: queueItem.job_seeker_id,
           job_post_id: queueItem.job_post_id,
           application_queue_id: queueItem.id,
-        }).catch(() => {});
+        }).catch((err) => console.error("[queue:status] activity log failed:", err));
       }
 
       if (payload.status === "HIRED") {
@@ -150,7 +136,7 @@ export async function POST(request: Request) {
           job_seeker_id: queueItem.job_seeker_id,
           job_post_id: queueItem.job_post_id,
           application_queue_id: queueItem.id,
-        }).catch(() => {});
+        }).catch((err) => console.error("[queue:status] activity log failed:", err));
       }
     }
   }

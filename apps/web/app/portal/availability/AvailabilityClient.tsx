@@ -217,13 +217,13 @@ export default function AvailabilityClient({
 
       {/* First-time setup banner */}
       {showFirstTimeBanner && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
-          <svg className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-violet-50 border border-violet-200 rounded-xl p-4 flex gap-3">
+          <svg className="w-5 h-5 text-violet-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <div>
-            <p className="text-sm font-medium text-blue-800">Set up your availability</p>
-            <p className="text-sm text-blue-700 mt-0.5">
+            <p className="text-sm font-medium text-violet-800">Set up your availability</p>
+            <p className="text-sm text-violet-700 mt-0.5">
               Once you save your availability, interviews can be scheduled automatically. You&apos;ll
               receive a reminder every Monday morning to confirm or adjust your schedule.
             </p>
@@ -288,7 +288,7 @@ export default function AvailabilityClient({
         <select
           value={timezone}
           onChange={(e) => setTimezone(e.target.value)}
-          className="w-full sm:w-72 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full sm:w-72 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
         >
           {TIMEZONES.map((tz) => (
             <option key={tz} value={tz}>{tz}</option>
@@ -308,8 +308,8 @@ export default function AvailabilityClient({
                   <button
                     type="button"
                     onClick={() => toggleDay(i)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
-                      day.available ? "bg-blue-600" : "bg-gray-200"
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-1 ${
+                      day.available ? "bg-violet-600" : "bg-gray-200"
                     }`}
                     role="switch"
                     aria-checked={day.available}
@@ -339,14 +339,14 @@ export default function AvailabilityClient({
                         type="time"
                         value={win.start}
                         onChange={(e) => updateWindow(i, j, "start", e.target.value)}
-                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                       />
                       <span className="text-gray-400 text-sm">to</span>
                       <input
                         type="time"
                         value={win.end}
                         onChange={(e) => updateWindow(i, j, "end", e.target.value)}
-                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                       />
                       {win.start >= win.end && (
                         <span className="text-xs text-red-500">End must be after start</span>
@@ -367,7 +367,7 @@ export default function AvailabilityClient({
                   <button
                     type="button"
                     onClick={() => addWindow(i)}
-                    className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 transition-colors mt-1"
+                    className="flex items-center gap-1 text-sm text-violet-600 hover:text-violet-700 transition-colors mt-1"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -387,7 +387,7 @@ export default function AvailabilityClient({
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-medium rounded-lg transition-colors"
+          className="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 disabled:bg-violet-300 text-white text-sm font-medium rounded-lg transition-colors"
         >
           {saving ? "Saving…" : "Save Availability"}
         </button>

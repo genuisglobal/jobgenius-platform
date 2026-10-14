@@ -1,5 +1,9 @@
 import { requireJobSeeker } from "@/lib/auth";
-import { supabaseAdmin } from "@/lib/auth";
+import {
+  loadInterviewContext,
+  normalizePersona,
+  buildRealtimeInstructions,
+} from "@/lib/portal/interview-context";
 
 const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-mini";
 const REALTIME_VOICE = process.env.OPENAI_REALTIME_VOICE || "alloy";
@@ -17,16 +21,23 @@ export async function POST(
     return Response.json({ error: "OpenAI is not configured." }, { status: 500 });
   }
 
-  const { data: prep } = await supabaseAdmin
-    .from("interview_prep")
-    .select("id")
-    .eq("id", params.id)
-    .eq("job_seeker_id", auth.user.id)
-    .single();
+  let body: { persona?: string } = {};
+  try {
+    body = await request.json();
+  } catch {
+    // optional body
+  }
+  const persona = normalizePersona(body.persona);
 
-  if (!prep) {
+  // loadInterviewContext also verifies the prep belongs to this seeker.
+  const context = await loadInterviewContext(params.id, auth.user.id);
+  if (!context) {
     return Response.json({ error: "Interview prep not found." }, { status: 404 });
   }
+
+  // Build résumé + JD grounded instructions server-side so the candidate's
+  // résumé never has to be assembled on the client.
+  const instructions = buildRealtimeInstructions(persona, context);
 
   const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
     method: "POST",
@@ -38,6 +49,7 @@ export async function POST(
       model: REALTIME_MODEL,
       voice: REALTIME_VOICE,
       modalities: ["audio", "text"],
+      instructions,
       input_audio_transcription: { model: "whisper-1" },
     }),
   });
@@ -56,5 +68,10 @@ export async function POST(
     return Response.json({ error: "Missing realtime token." }, { status: 500 });
   }
 
-  return Response.json({ token, expires_at: data?.client_secret?.expires_at });
+  return Response.json({
+    token,
+    expires_at: data?.client_secret?.expires_at,
+    instructions,
+    resume_grounded: context.hasResume,
+  });
 }

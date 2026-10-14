@@ -1,7 +1,7 @@
 {
   "name": "JobGenius",
-  "version": "0.3.0",
-  "description": "AI-powered job placement automation - save jobs, discover opportunities, match & apply faster.",
+  "version": "0.4.28",
+  "description": "AI-powered job placement automation - match intelligence, autofill, discover opportunities & apply faster.",
   "manifest_version": 3,
   "action": {
     "default_popup": "popup.html",
@@ -38,5 +38,12 @@
   ],
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*/*"],
+      "js": ["bubble.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }

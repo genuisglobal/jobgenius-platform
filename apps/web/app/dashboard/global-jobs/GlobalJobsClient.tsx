@@ -158,7 +158,7 @@ export default function GlobalJobsClient({
         <button
           onClick={runMatchAll}
           disabled={runningMatchAll}
-          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+          className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 whitespace-nowrap"
         >
           {runningMatchAll ? "Running Sorting Agent..." : "Run Sorting Agent"}
         </button>
@@ -269,7 +269,7 @@ export default function GlobalJobsClient({
                 </tr>
               ) : (
                 jobs.map((job) => (
-                  <tr key={job.id} className={`hover:bg-gray-50 ${selectedJobs.has(job.id) ? "bg-blue-50" : ""}`}>
+                  <tr key={job.id} className={`hover:bg-gray-50 ${selectedJobs.has(job.id) ? "bg-violet-50" : ""}`}>
                     <td className="px-3 py-3">
                       <input
                         type="checkbox"
@@ -357,7 +357,7 @@ export default function GlobalJobsClient({
 function StatCard({ label, value, color }: { label: string; value: number; color?: string }) {
   const colorClasses: Record<string, string> = {
     purple: "text-purple-600",
-    blue: "text-blue-600",
+    blue: "text-violet-600",
     gray: "text-gray-600",
     green: "text-green-600",
     indigo: "text-indigo-600",
@@ -375,7 +375,7 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 function SourceBadge({ type }: { type: string | null }) {
   const colors: Record<string, string> = {
     extension_scrape: "bg-purple-100 text-purple-800",
-    discovery: "bg-blue-100 text-blue-800",
+    discovery: "bg-violet-100 text-violet-800",
     manual: "bg-gray-100 text-gray-800",
   };
 

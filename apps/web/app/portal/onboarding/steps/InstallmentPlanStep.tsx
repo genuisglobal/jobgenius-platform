@@ -27,7 +27,7 @@ interface RegistrationFlexRequest {
 }
 
 interface InstallmentPlanStepProps {
-  planType: "essentials" | "premium";
+  registrationFee: number;
   onContinue: () => void;
   onBack: () => void;
   showBackButton?: boolean;
@@ -100,12 +100,12 @@ function buildInstallmentDraft(
 }
 
 export default function InstallmentPlanStep({
-  planType,
+  registrationFee,
   onContinue,
   onBack,
   showBackButton = true,
 }: InstallmentPlanStepProps) {
-  const totalFee = planType === "premium" ? 1000 : 500;
+  const totalFee = registrationFee;
   const today = useMemo(() => startOfToday(), []);
 
   const [count, setCount] = useState<number>(1);
@@ -635,7 +635,7 @@ export default function InstallmentPlanStep({
         <select
           value={count}
           onChange={(event) => setCount(Number(event.target.value))}
-          className="w-full border border-gray-400 bg-white text-gray-900 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full border border-gray-400 bg-white text-gray-900 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
         >
           {installmentOptions.map((value) => (
             <option key={value} value={value}>
@@ -673,7 +673,7 @@ export default function InstallmentPlanStep({
                     onChange={(event) =>
                       updateInstallment(index, "amount", event.target.value)
                     }
-                    className="w-full border border-gray-400 bg-white text-gray-900 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-400 bg-white text-gray-900 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                     placeholder="0.00"
                   />
                 </div>
@@ -689,7 +689,7 @@ export default function InstallmentPlanStep({
                     onChange={(event) =>
                       updateInstallment(index, "proposedDate", event.target.value)
                     }
-                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 ${
                       dateInvalid
                         ? "border-red-400 bg-red-50 text-gray-900"
                         : "border-gray-400 bg-white text-gray-900"
@@ -747,7 +747,7 @@ export default function InstallmentPlanStep({
           type="button"
           onClick={handleConfirm}
           disabled={!canSubmit || saving}
-          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? "Saving..." : "Confirm Payment Plan"}
         </button>

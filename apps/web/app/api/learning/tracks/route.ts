@@ -1,4 +1,5 @@
 import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
+import { normalizeLearningSkills, toSkillSlug } from "@/lib/learning/target-mapper";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
@@ -45,6 +46,9 @@ export async function POST(request: Request) {
     title?: string;
     description?: string;
     category?: string;
+    creation_mode?: string;
+    target_skill?: string;
+    focus_skills?: string[];
     job_post_id?: string;
   };
 
@@ -71,6 +75,29 @@ export async function POST(request: Request) {
 
   const validCategories = ["technical", "behavioral", "industry", "tools", "general"];
   const category = validCategories.includes(body.category ?? "") ? body.category : "general";
+  const validCreationModes = ["blank", "job_gap_refresh", "manual_skill_refresh"];
+  const creationMode = validCreationModes.includes(body.creation_mode ?? "")
+    ? body.creation_mode
+    : "blank";
+  const focusSkills = normalizeLearningSkills([
+    body.target_skill,
+    ...(Array.isArray(body.focus_skills) ? body.focus_skills : []),
+  ]);
+  const primarySkill = focusSkills[0] ?? null;
+
+  if (creationMode === "manual_skill_refresh" && !primarySkill) {
+    return Response.json(
+      { success: false, error: "A target skill is required for manual skill refresh tracks." },
+      { status: 400 }
+    );
+  }
+
+  if (creationMode === "job_gap_refresh" && !primarySkill && !body.job_post_id) {
+    return Response.json(
+      { success: false, error: "Provide a target skill or a job post for job gap refresh tracks." },
+      { status: 400 }
+    );
+  }
 
   const { data: track, error } = await supabaseServer
     .from("learning_tracks")
@@ -80,6 +107,10 @@ export async function POST(request: Request) {
       title: body.title,
       description: body.description ?? null,
       category,
+      creation_mode: creationMode,
+      target_skill: primarySkill,
+      target_skill_slug: primarySkill ? toSkillSlug(primarySkill) : null,
+      focus_skills: focusSkills,
       job_post_id: body.job_post_id ?? null,
       status: "draft",
     })

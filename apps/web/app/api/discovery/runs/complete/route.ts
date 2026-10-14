@@ -74,7 +74,10 @@ export async function POST(request: Request) {
   if (run?.search_id) {
     await supabaseServer
       .from("job_discovery_searches")
-      .update({ last_job_count: payload.jobs_found })
+      .update({
+        last_job_count: payload.jobs_found,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", run.search_id);
   }
 

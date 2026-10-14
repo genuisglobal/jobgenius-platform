@@ -26,8 +26,8 @@ export default function MultiCheckbox({
           onClick={() => toggle(opt.value)}
           className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
             selected.includes(opt.value)
-              ? "bg-blue-600 text-white border-blue-600"
-              : "bg-white text-gray-800 border-gray-400 hover:border-blue-500"
+              ? "bg-violet-600 text-white border-violet-600"
+              : "bg-white text-gray-800 border-gray-400 hover:border-violet-500"
           }`}
         >
           {opt.label}

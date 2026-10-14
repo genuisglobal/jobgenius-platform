@@ -78,10 +78,14 @@ export async function POST(request: Request) {
 
   // Update payment request status if provided
   if (paymentRequestId) {
-    await supabaseAdmin
+    const { error: reqUpdateError } = await supabaseAdmin
       .from("payment_requests")
       .update({ status: "screenshot_uploaded" })
       .eq("id", paymentRequestId);
+
+    if (reqUpdateError) {
+      console.error("[portal:billing] failed to update payment_requests status:", reqUpdateError);
+    }
   }
 
   return NextResponse.json({ ok: true, screenshot }, { status: 201 });

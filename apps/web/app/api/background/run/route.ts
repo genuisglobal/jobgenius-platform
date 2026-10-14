@@ -1,6 +1,12 @@
 import { requireOpsAuth } from "@/lib/ops-auth";
+import { enforceBackgroundRateLimit } from "@/lib/rate-limit-presets";
 import { supabaseServer } from "@/lib/supabase/server";
-import { computeMatchScore, parseJobPost } from "@/lib/matching";
+import {
+  describeDbError,
+  transientUnavailableBody,
+  withTransientRetry,
+} from "@/lib/supabase-retry";
+import { computeMatchScore, parseJobPostSmart } from "@/lib/matching";
 import { tailorResume } from "@/lib/resume-tailor";
 import {
   tailorResumeStructured,
@@ -18,18 +24,15 @@ import { interviewPrepReadyEmail } from "@/lib/email-templates/interview-prep-re
 import { scanAllInboxes, scanSeekerInbox } from "@/lib/gmail/inbox-scanner";
 import { findMatchesForContact, findMatchesForJobPost } from "@/lib/network/matching";
 import { maybeUpsertResumeHardeningAlert } from "@/lib/resume-bank-alerts";
-import { createBlandOutboundCall } from "@/lib/voice/bland";
+import { dispatchVoiceCall } from "@/lib/voice/dispatch";
 import {
   evaluateAutoApplyPreflight,
   loadSavedRunnerStorageState,
 } from "@/lib/auto-apply-preflight";
-import {
-  appendVoiceConversationNote,
-  isUpsellOptedOut,
-  normalizePhone,
-  resolveAssignedAccountManagerId,
-} from "@/lib/voice/service";
-import { normalizeVoiceCallType, type VoiceCallType } from "@/lib/voice/types";
+import { applyHostGraduation } from "@/lib/host-graduation";
+import { decide, recordDecision, routeDecision } from "@/lib/consultant/decision-engine";
+import { normalizePhone, resolveAssignedAccountManagerId } from "@/lib/voice/service";
+import type { VoiceCallType } from "@/lib/voice/types";
 import { randomUUID } from "crypto";
 
 type BackgroundJobRow = {
@@ -92,7 +95,7 @@ const AUTO_TAILOR_ENABLED = resolveFlag(
 const AUTO_TAILOR_REQUIRED = resolveFlag("AUTO_TAILOR_REQUIRED", false);
 const AUTO_APPLY_ENABLED = resolveFlag("AUTO_APPLY_ENABLED", IS_PROD);
 const AUTO_APPLY_ALLOWED_ATS = new Set(
-  (process.env.AUTO_APPLY_ALLOWED_ATS ?? "LINKEDIN,GREENHOUSE,WORKDAY,GENERIC")
+  (process.env.AUTO_APPLY_ALLOWED_ATS ?? "LINKEDIN,GREENHOUSE,WORKDAY,LEVER,SMARTRECRUITERS,GENERIC")
     .split(",")
     .map((entry) => entry.trim().toUpperCase())
     .filter(Boolean)
@@ -103,7 +106,8 @@ const AUTO_OUTREACH_CONTACT_LIMIT = Math.max(
   Number(process.env.AUTO_OUTREACH_CONTACT_LIMIT ?? 1),
   1
 );
-const BLAND_OUTBOUND_ENABLED = resolveFlag("BLAND_OUTBOUND_ENABLED", false);
+const FACT_GATE_ENFORCED = resolveFlag("FACT_GATE_ENFORCED", false);
+const AUTO_APPLY_REQUIRED_FACTS = ["work_authorization", "requires_sponsorship"];
 const AUTO_APPLY_STALE_RUN_MINUTES = Math.max(
   Number(process.env.AUTO_APPLY_STALE_RUN_MINUTES ?? 60),
   5
@@ -453,7 +457,7 @@ async function ensureParsedJobPost(jobPost: JobPostRow) {
     return jobPost;
   }
 
-  const parsed = parseJobPost(
+  const parsed = await parseJobPostSmart(
     jobPost.title ?? "",
     jobPost.company ?? null,
     jobPost.location ?? null,
@@ -476,6 +480,9 @@ async function ensureParsedJobPost(jobPost: JobPostRow) {
       company_size: parsed.company_size,
       offers_visa_sponsorship: parsed.offers_visa_sponsorship,
       employment_type: parsed.employment_type,
+      parse_source: parsed.parse_source,
+      responsibilities: parsed.responsibilities,
+      screening_questions: parsed.screening_questions,
       parsed_at: parsedAt,
     })
     .eq("id", jobPost.id);
@@ -822,6 +829,20 @@ async function runTailorResume(payload: Record<string, unknown>) {
     tailoredData = structuredResult.tailoredData;
     usedTemplateId = templateId;
 
+    // Safety gate: if the tailored resume failed a blocking check (invented
+    // skill, altered identity), route it to a human instead of auto-applying.
+    if (structuredResult.safety && !structuredResult.safety.ok && queueId) {
+      const blockers = structuredResult.safety.issues
+        .filter((i) => i.severity === "block")
+        .map((i) => i.message)
+        .join("; ");
+      await flagQueueAttention(
+        queueId,
+        "RESUME_SAFETY",
+        `Tailored resume failed safety check: ${blockers}`.slice(0, 300)
+      );
+    }
+
     // Generate formatted PDF from structured data
     try {
       const pdfBuffer = renderResumePdf(structuredResult.tailoredData, templateId);
@@ -1060,7 +1081,7 @@ async function runInterviewPrepReady(payload: Record<string, unknown>) {
   }
 
   try {
-    const playbook = await loadActivePlaybook("interview_prep");
+    const playbook = await loadActivePlaybook("interview_warmup");
     if (!playbook) {
       return;
     }
@@ -1084,14 +1105,14 @@ async function runInterviewPrepReady(payload: Record<string, unknown>) {
     const { data: voiceCall } = await supabaseServer
       .from("voice_calls")
       .insert({
-        provider: "bland",
+        provider: "retell",
         direction: "outbound",
-        call_type: "interview_prep",
+        call_type: "interview_warmup",
         status: "queued",
         job_seeker_id: jobSeekerId,
         account_manager_id: accountManagerId,
         playbook_id: playbook.id,
-        from_number: process.env.BLAND_DEFAULT_FROM_NUMBER ?? null,
+        from_number: process.env.RETELL_DEFAULT_FROM_NUMBER ?? null,
         to_number: seekerPhone,
         contact_name: (jobSeeker.full_name as string | undefined) ?? null,
         task,
@@ -1123,7 +1144,7 @@ async function runInterviewPrepReady(payload: Record<string, unknown>) {
         voice_call_id: voiceCallId,
         job_seeker_id: jobSeekerId,
         interview_id: interviewId ?? undefined,
-        call_type: "interview_prep",
+        call_type: "interview_warmup",
       },
       {
         runAt,
@@ -1258,13 +1279,17 @@ async function runAutoStartRun(payload: Record<string, unknown>) {
     loadSavedRunnerStorageState(queueItem.job_seeker_id),
   ]);
 
-  const preflight = evaluateAutoApplyPreflight({
+  let preflight = evaluateAutoApplyPreflight({
     source: jobPost.source,
     url: jobPost.url,
     matchScore,
     storageState,
     allowedAts: AUTO_APPLY_ALLOWED_ATS,
   });
+
+  // Mode 3 graduation: a host proven by interactive autofill can auto-run even
+  // without a curated host rule (flag-gated; only relaxes HOST_UNSUPPORTED).
+  preflight = await applyHostGraduation(preflight);
 
   if (!preflight.eligible) {
     await flagQueueAttention(
@@ -1273,6 +1298,27 @@ async function runAutoStartRun(payload: Record<string, unknown>) {
       preflight.message || "Autonomous apply preflight failed."
     );
     return;
+  }
+
+  // Fact gate (Org Singularity): never auto-answer unconfirmed sensitive fields.
+  // Always record the decision (shadow); only block the run when FACT_GATE_ENFORCED.
+  const gate = await decide({
+    jobSeekerId: queueItem.job_seeker_id,
+    subjectType: "application",
+    subjectRef: queueItem.id,
+    requiredFactKeys: AUTO_APPLY_REQUIRED_FACTS,
+  });
+  if (gate.verdict !== "act") {
+    const decisionId = await recordDecision(gate);
+    await routeDecision(gate, decisionId);
+    if (FACT_GATE_ENFORCED) {
+      await flagQueueAttention(
+        queueItem.id,
+        gate.verdict === "escalate" ? "FACT_GATE_ESCALATE" : "FACT_GATE_ASK",
+        gate.recommendedAction
+      );
+      return;
+    }
   }
 
   const atsType = preflight.atsType;
@@ -1499,277 +1545,12 @@ async function runMatchNetworkContacts(payload: Record<string, unknown>) {
   await findMatchesForContact(contactId);
 }
 
-type VoicePlaybookJoin = {
-  id: string;
-  pathway_id: string | null;
-  system_prompt: string;
-  assistant_goal: string | null;
-  max_retry_attempts: number | null;
-  retry_backoff_minutes: number | null;
-  metadata: unknown;
-  escalation_rules: unknown;
-};
-
-type VoiceCallRow = {
-  id: string;
-  status: string;
-  direction: string;
-  call_type: string;
-  job_seeker_id: string | null;
-  lead_submission_id: string | null;
-  account_manager_id: string | null;
-  to_number: string;
-  from_number: string | null;
-  retry_count: number | null;
-  max_retries: number | null;
-  task: string | null;
-  request_payload: unknown;
-  provider_call_id: string | null;
-  voice_playbooks: VoicePlaybookJoin | VoicePlaybookJoin[] | null;
-};
-
-function resolveAppBaseUrl() {
-  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (configured) {
-    return configured.endsWith("/") ? configured.slice(0, -1) : configured;
-  }
-  const vercelUrl = process.env.VERCEL_URL?.trim();
-  if (!vercelUrl) return null;
-  const withProtocol = vercelUrl.startsWith("http")
-    ? vercelUrl
-    : `https://${vercelUrl}`;
-  return withProtocol.endsWith("/") ? withProtocol.slice(0, -1) : withProtocol;
-}
-
-function resolveVoiceWebhookUrl() {
-  const base = resolveAppBaseUrl();
-  if (!base) return null;
-  return `${base}/api/voice/webhook/bland`;
-}
-
-function asRecord(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return value as Record<string, unknown>;
-}
-
-function normalizePlaybook(value: VoiceCallRow["voice_playbooks"]) {
-  if (Array.isArray(value)) return value[0] ?? null;
-  return value ?? null;
-}
-
-async function scheduleVoiceRetry(voiceCallId: string, runAt: Date) {
-  await enqueueBackgroundJob(
-    "VOICE_RETRY",
-    { voice_call_id: voiceCallId },
-    { runAt, maxAttempts: 1 }
-  );
-}
-
 async function runVoiceDispatch(payload: Record<string, unknown>) {
   const voiceCallId = getPayloadString(payload, "voice_call_id");
   if (!voiceCallId) {
     throw new Error("Missing voice_call_id.");
   }
-
-  const { data: row, error } = await supabaseServer
-    .from("voice_calls")
-    .select(`
-      id,
-      status,
-      direction,
-      call_type,
-      job_seeker_id,
-      lead_submission_id,
-      account_manager_id,
-      to_number,
-      from_number,
-      retry_count,
-      max_retries,
-      task,
-      request_payload,
-      provider_call_id,
-      voice_playbooks (
-        id,
-        pathway_id,
-        system_prompt,
-        assistant_goal,
-        max_retry_attempts,
-        retry_backoff_minutes,
-        metadata,
-        escalation_rules
-      )
-    `)
-    .eq("id", voiceCallId)
-    .single();
-
-  if (error || !row) {
-    throw new Error("Voice call row not found.");
-  }
-
-  const voiceCall = row as unknown as VoiceCallRow;
-  const playbook = normalizePlaybook(voiceCall.voice_playbooks);
-  const callType = normalizeVoiceCallType(voiceCall.call_type);
-
-  if (!callType) {
-    throw new Error(`Invalid voice call type: ${voiceCall.call_type}`);
-  }
-
-  if (voiceCall.direction !== "outbound") {
-    return;
-  }
-
-  if (!BLAND_OUTBOUND_ENABLED) {
-    const nowIso = new Date().toISOString();
-    await supabaseServer
-      .from("voice_calls")
-      .update({
-        status: "failed",
-        response_payload: {
-          error: "BLAND outbound calling is disabled. Set BLAND_OUTBOUND_ENABLED=true.",
-          failed_at: nowIso,
-        },
-        updated_at: nowIso,
-      })
-      .eq("id", voiceCall.id);
-
-    if (voiceCall.job_seeker_id && voiceCall.account_manager_id) {
-      await appendVoiceConversationNote({
-        jobSeekerId: voiceCall.job_seeker_id,
-        accountManagerId: voiceCall.account_manager_id,
-        callType: callType as VoiceCallType,
-        status: "failed",
-        summary: "Voice call not sent because BLAND_OUTBOUND_ENABLED is false.",
-      });
-    }
-    return;
-  }
-
-  if (callType === "upsell_retention" && (await isUpsellOptedOut(voiceCall.to_number))) {
-    await supabaseServer
-      .from("voice_calls")
-      .update({
-        status: "opted_out",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", voiceCall.id);
-    return;
-  }
-
-  const requestPayload = asRecord(voiceCall.request_payload);
-  const nowIso = new Date().toISOString();
-  const task =
-    String(voiceCall.task ?? "").trim() ||
-    String(playbook?.assistant_goal ?? "").trim() ||
-    String(playbook?.system_prompt ?? "").trim();
-
-  if (!task) {
-    throw new Error("Voice task/prompt is required before dispatch.");
-  }
-
-  try {
-    const result = await createBlandOutboundCall({
-      toNumber: voiceCall.to_number,
-      fromNumber: voiceCall.from_number,
-      task,
-      pathwayId: playbook?.pathway_id ?? null,
-      webhookUrl: resolveVoiceWebhookUrl(),
-      requestData: {
-        voice_call_id: voiceCall.id,
-        call_type: callType,
-        job_seeker_id: voiceCall.job_seeker_id,
-        lead_submission_id: voiceCall.lead_submission_id,
-        account_manager_id: voiceCall.account_manager_id,
-        ...(requestPayload.request_data && typeof requestPayload.request_data === "object"
-          ? (requestPayload.request_data as Record<string, unknown>)
-          : {}),
-      },
-      metadata: {
-        voice_call_id: voiceCall.id,
-        call_type: callType,
-      },
-    });
-
-    await supabaseServer
-      .from("voice_calls")
-      .update({
-        status: "initiated",
-        provider_call_id: result.providerCallId ?? voiceCall.provider_call_id,
-        request_payload: {
-          ...requestPayload,
-          dispatch_started_at: nowIso,
-        },
-        response_payload: result.raw,
-        call_started_at: nowIso,
-        next_retry_at: null,
-        updated_at: nowIso,
-      })
-      .eq("id", voiceCall.id);
-
-    if (voiceCall.job_seeker_id && voiceCall.account_manager_id) {
-      await appendVoiceConversationNote({
-        jobSeekerId: voiceCall.job_seeker_id,
-        accountManagerId: voiceCall.account_manager_id,
-        callType: callType as VoiceCallType,
-        status: "initiated",
-        summary: "Automated voice call initiated.",
-        providerCallId: result.providerCallId,
-      });
-    }
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : "Unknown voice dispatch error.";
-    const currentRetry = voiceCall.retry_count ?? 0;
-    const maxRetries = Math.max(
-      voiceCall.max_retries ?? playbook?.max_retry_attempts ?? 3,
-      0
-    );
-    const nextRetryCount = currentRetry + 1;
-
-    if (nextRetryCount <= maxRetries) {
-      const backoffMinutes = Math.max(playbook?.retry_backoff_minutes ?? 120, 1);
-      const retryAt = new Date(Date.now() + backoffMinutes * 60 * 1000);
-      await supabaseServer
-        .from("voice_calls")
-        .update({
-          status: "queued",
-          retry_count: nextRetryCount,
-          next_retry_at: retryAt.toISOString(),
-          response_payload: {
-            error: detail,
-            failed_at: nowIso,
-            retry_count: nextRetryCount,
-          },
-          updated_at: nowIso,
-        })
-        .eq("id", voiceCall.id);
-      await scheduleVoiceRetry(voiceCall.id, retryAt);
-      return;
-    }
-
-    await supabaseServer
-      .from("voice_calls")
-      .update({
-        status: "failed",
-        retry_count: nextRetryCount,
-        next_retry_at: null,
-        response_payload: {
-          error: detail,
-          failed_at: nowIso,
-          retry_count: nextRetryCount,
-        },
-        updated_at: nowIso,
-      })
-      .eq("id", voiceCall.id);
-
-    if (voiceCall.job_seeker_id && voiceCall.account_manager_id) {
-      await appendVoiceConversationNote({
-        jobSeekerId: voiceCall.job_seeker_id,
-        accountManagerId: voiceCall.account_manager_id,
-        callType: callType as VoiceCallType,
-        status: "failed",
-        summary: `Voice call failed after retries: ${detail}`,
-      });
-    }
-  }
+  await dispatchVoiceCall(voiceCallId);
 }
 
 async function runVoiceRetry(payload: Record<string, unknown>) {
@@ -1778,6 +1559,17 @@ async function runVoiceRetry(payload: Record<string, unknown>) {
 
 async function runVoiceFollowup(payload: Record<string, unknown>) {
   await runVoiceDispatch(payload);
+}
+
+async function runDiagnoseFailure(payload: Record<string, unknown>) {
+  const runId = typeof payload.run_id === "string" ? payload.run_id : null;
+  if (!runId) {
+    throw new Error("DIAGNOSE_FAILURE requires payload.run_id");
+  }
+  // Lazy import keeps Next from pulling the Vision-LLM module into other
+  // routes that don't need it.
+  const { diagnoseRunFailure } = await import("@/lib/failure-diagnosis");
+  await diagnoseRunFailure({ runId });
 }
 
 async function handleJob(job: BackgroundJobRow) {
@@ -1817,12 +1609,18 @@ async function handleJob(job: BackgroundJobRow) {
     case "VOICE_FOLLOWUP":
       await runVoiceFollowup(job.payload);
       return;
+    case "DIAGNOSE_FAILURE":
+      await runDiagnoseFailure(job.payload);
+      return;
     default:
       throw new Error(`Unknown job type: ${job.type}`);
   }
 }
 
 async function runJobs(request: Request) {
+  const rl = await enforceBackgroundRateLimit(request);
+  if (!rl.allowed) return rl.response;
+
   const auth = requireOpsAuth(request.headers, request.url);
   if (!auth.ok) {
     return Response.json({ success: false, error: auth.error }, { status: 401 });
@@ -1838,17 +1636,37 @@ async function runJobs(request: Request) {
   const staleRunRecovery = await recoverStaleApplicationRuns(nowIso);
   const workerId = `background:${process.env.VERCEL_REGION ?? "local"}:${randomUUID()}`;
 
-  const { data: queuedJobs, error } = await supabaseServer
-    .from("background_jobs")
-    .select("id, type, payload, attempts, max_attempts")
-    .in("status", ["QUEUED", "RETRY"])
-    .lte("run_at", nowIso)
-    .is("locked_at", null)
-    .order("run_at", { ascending: true })
-    .limit(limit);
+  // Retried on an unreachable database — see lib/supabase-retry.ts. This
+  // runs on a schedule, and a dropped Supabase connection here used to
+  // fail the whole run with a 500 that logged nothing.
+  const {
+    data: queuedJobs,
+    error,
+    transient,
+  } = await withTransientRetry("background jobs", () =>
+    supabaseServer
+      .from("background_jobs")
+      .select("id, type, payload, attempts, max_attempts")
+      .in("status", ["QUEUED", "RETRY"])
+      .lte("run_at", nowIso)
+      .is("locked_at", null)
+      .order("run_at", { ascending: true })
+      .limit(limit)
+  );
 
   if (error) {
-    return Response.json({ success: false, error: "Failed to load jobs." }, { status: 500 });
+    console.error("[background:run] failed to load jobs:", {
+      transient,
+      error: describeDbError(error),
+    });
+    return transient
+      ? Response.json(transientUnavailableBody("background jobs", error), {
+          status: 503,
+        })
+      : Response.json(
+          { success: false, error: "Failed to load jobs." },
+          { status: 500 }
+        );
   }
 
   const results: Array<{ id: string; status: string; error?: string }> = [];

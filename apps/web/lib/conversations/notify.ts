@@ -44,7 +44,7 @@ export async function notifySeekerConversationActivity(params: {
       is_task: Boolean(params.task),
       due_date: params.task?.due_date ?? null,
     },
-  }).catch(() => {});
+  }).catch((err) => console.error("[notify] email notification failed:", err));
 }
 
 // Notify the AM (via email) when a job seeker replies or updates a task.
@@ -92,5 +92,5 @@ export async function notifyAMConversationActivity(params: {
       is_task_update: Boolean(params.isTaskUpdate),
       am_id: params.amId,
     },
-  }).catch(() => {});
+  }).catch((err) => console.error("[notify] push notification failed:", err));
 }

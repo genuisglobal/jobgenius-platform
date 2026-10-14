@@ -11,7 +11,12 @@ export async function POST(req: NextRequest) {
   }
 
   const amId = auth.user.id;
-  const body = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { seeker_ids, subject, content, due_date } = body;
 
   if (!Array.isArray(seeker_ids) || seeker_ids.length === 0) {
@@ -59,7 +64,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Insert task message
-      await supabaseAdmin.from("conversation_messages").insert({
+      const { error: msgError } = await supabaseAdmin.from("conversation_messages").insert({
         conversation_id: conv.id,
         sender_type: "account_manager",
         content: content.trim(),
@@ -67,6 +72,10 @@ export async function POST(req: NextRequest) {
         task_status: "pending",
         task_due_date: due_date || null,
       });
+
+      if (msgError) {
+        console.error("[am:bulk-task] failed to insert task message:", msgError);
+      }
 
       results.push({ seeker_id: seekerId, conversation_id: conv.id });
     } catch {

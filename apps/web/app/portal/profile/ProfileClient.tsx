@@ -196,7 +196,7 @@ function Section({
         <button
           onClick={onSave}
           disabled={saving}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 shrink-0"
+          className="px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 disabled:opacity-50 shrink-0"
         >
           {saving ? "Saving..." : "Save"}
         </button>
@@ -253,7 +253,7 @@ function LocationPreferencesEditor({
               <select
                 value={pref.work_type}
                 onChange={(e) => updateWorkType(index, e.target.value as "remote" | "hybrid" | "onsite")}
-                className="px-3 py-1.5 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-1.5 border rounded-lg text-sm font-medium focus:ring-2 focus:ring-violet-500"
               >
                 <option value="remote">Remote</option>
                 <option value="hybrid">Hybrid</option>
@@ -278,7 +278,7 @@ function LocationPreferencesEditor({
       ))}
       <button
         onClick={addEntry}
-        className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors text-sm"
+        className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-violet-400 hover:text-violet-600 transition-colors text-sm"
       >
         + Add Work Type Preference
       </button>
@@ -438,7 +438,7 @@ export default function ProfileClient({
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Resume</h3>
         <p className="text-sm text-gray-500 mb-4">Upload your resume to automatically pre-fill your profile. We'll extract your skills, work history, and education.</p>
         <div
-          className="border-2 border-dashed border-gray-300 rounded-lg p-4 sm:p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
+          className="border-2 border-dashed border-gray-300 rounded-lg p-4 sm:p-8 text-center hover:border-violet-400 transition-colors cursor-pointer"
           onClick={() => fileRef.current?.click()}
         >
           <input ref={fileRef} type="file" accept=".pdf,.docx,.doc,.txt" onChange={handleUpload} className="hidden" />
@@ -466,7 +466,7 @@ export default function ProfileClient({
                 onChange={(e) =>
                   update("resume_template_id", e.target.value as ResumeTemplateId)
                 }
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500"
               >
                 {RESUME_TEMPLATES.map((template) => (
                   <option key={template.id} value={template.id}>
@@ -486,7 +486,7 @@ export default function ProfileClient({
                 })
               }
               disabled={saving === "Resume Template"}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 disabled:opacity-50"
             >
               {saving === "Resume Template" ? "Saving..." : "Save Template"}
             </button>
@@ -502,7 +502,7 @@ export default function ProfileClient({
                   <p className="text-sm font-medium text-gray-900">{doc.file_name}</p>
                   <p className="text-xs text-gray-500">{new Date(doc.uploaded_at).toLocaleDateString()}</p>
                 </div>
-                <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:text-blue-800">Download</a>
+                <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-violet-600 hover:text-violet-800">Download</a>
               </div>
             ))}
           </div>
@@ -592,7 +592,7 @@ export default function ProfileClient({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Seniority Level</label>
-              <select value={profile.seniority || ""} onChange={(e) => update("seniority", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              <select value={profile.seniority || ""} onChange={(e) => update("seniority", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500">
                 <option value="">Select...</option>
                 <option value="entry">Entry Level</option>
                 <option value="mid">Mid Level</option>
@@ -606,31 +606,31 @@ export default function ProfileClient({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Years of Experience</label>
-              <input type="number" value={profile.years_experience ?? ""} onChange={(e) => update("years_experience", e.target.value ? parseInt(e.target.value) : undefined)} placeholder="e.g. 5" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+              <input type="number" value={profile.years_experience ?? ""} onChange={(e) => update("years_experience", e.target.value ? parseInt(e.target.value) : undefined)} placeholder="e.g. 5" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Desired Minimum Salary</label>
-              <input type="number" value={profile.salary_min ?? ""} onChange={(e) => update("salary_min", e.target.value ? parseInt(e.target.value) : undefined)} placeholder="e.g. 80000" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+              <input type="number" value={profile.salary_min ?? ""} onChange={(e) => update("salary_min", e.target.value ? parseInt(e.target.value) : undefined)} placeholder="e.g. 80000" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Desired Maximum Salary</label>
-              <input type="number" value={profile.salary_max ?? ""} onChange={(e) => update("salary_max", e.target.value ? parseInt(e.target.value) : undefined)} placeholder="e.g. 120000" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+              <input type="number" value={profile.salary_max ?? ""} onChange={(e) => update("salary_max", e.target.value ? parseInt(e.target.value) : undefined)} placeholder="e.g. 120000" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
             </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Job Titles</label>
             <div className="flex gap-2">
-              <input type="text" value={titleInput} onChange={(e) => setTitleInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTargetTitle())} placeholder="Add a target title..." className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+              <input type="text" value={titleInput} onChange={(e) => setTitleInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTargetTitle())} placeholder="Add a target title..." className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
               <button onClick={addTargetTitle} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Add</button>
             </div>
             <div className="flex flex-wrap gap-2 mt-2">
               {(profile.target_titles || []).map((t) => (
-                <span key={t} className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-                  {t}<button onClick={() => removeTargetTitle(t)} className="hover:text-blue-600">&times;</button>
+                <span key={t} className="inline-flex items-center gap-1 px-3 py-1 bg-violet-100 text-violet-800 rounded-full text-sm">
+                  {t}<button onClick={() => removeTargetTitle(t)} className="hover:text-violet-600">&times;</button>
                 </span>
               ))}
             </div>
@@ -643,7 +643,7 @@ export default function ProfileClient({
       {/* ═══ Skills ═══ */}
       <Section title="Skills" complete={sectionComplete("Skills", profile)} saving={saving === "Skills"} onSave={() => save("Skills", { skills: profile.skills })}>
         <div className="flex gap-2">
-          <input type="text" value={skillInput} onChange={(e) => setSkillInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSkill())} placeholder="Add a skill..." className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+          <input type="text" value={skillInput} onChange={(e) => setSkillInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSkill())} placeholder="Add a skill..." className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
           <button onClick={addSkill} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Add</button>
         </div>
         <div className="flex flex-wrap gap-2 mt-3">
@@ -664,22 +664,22 @@ export default function ProfileClient({
               <button onClick={() => removeWorkEntry(i)} className="text-red-500 hover:text-red-700 text-sm min-h-[44px] min-w-[44px] flex items-center justify-end">Remove</button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <input type="text" value={entry.title} onChange={(e) => updateWorkEntry(i, "title", e.target.value)} placeholder="Job Title" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-              <input type="text" value={entry.company} onChange={(e) => updateWorkEntry(i, "company", e.target.value)} placeholder="Company Name" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-              <input type="text" value={entry.start_date} onChange={(e) => updateWorkEntry(i, "start_date", e.target.value)} placeholder="Start Date (YYYY-MM)" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+              <input type="text" value={entry.title} onChange={(e) => updateWorkEntry(i, "title", e.target.value)} placeholder="Job Title" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
+              <input type="text" value={entry.company} onChange={(e) => updateWorkEntry(i, "company", e.target.value)} placeholder="Company Name" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
+              <input type="text" value={entry.start_date} onChange={(e) => updateWorkEntry(i, "start_date", e.target.value)} placeholder="Start Date (YYYY-MM)" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
               <div className="flex items-center gap-3">
-                <input type="text" value={entry.end_date} onChange={(e) => updateWorkEntry(i, "end_date", e.target.value)} placeholder="End Date (YYYY-MM)" disabled={entry.current} className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50" />
+                <input type="text" value={entry.end_date} onChange={(e) => updateWorkEntry(i, "end_date", e.target.value)} placeholder="End Date (YYYY-MM)" disabled={entry.current} className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500 disabled:bg-gray-50" />
                 <label className="flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap">
                   <input type="checkbox" checked={entry.current} onChange={(e) => updateWorkEntry(i, "current", e.target.checked)} className="rounded" />Current
                 </label>
               </div>
               <div className="sm:col-span-2">
-                <textarea value={entry.description} onChange={(e) => updateWorkEntry(i, "description", e.target.value)} placeholder="Description of responsibilities and achievements..." rows={3} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+                <textarea value={entry.description} onChange={(e) => updateWorkEntry(i, "description", e.target.value)} placeholder="Description of responsibilities and achievements..." rows={3} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
               </div>
             </div>
           </div>
         ))}
-        <button onClick={addWorkEntry} className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">+ Add Position</button>
+        <button onClick={addWorkEntry} className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-violet-400 hover:text-violet-600 transition-colors">+ Add Position</button>
       </Section>
 
       {/* ═══ Education ═══ */}
@@ -693,7 +693,7 @@ export default function ProfileClient({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Degree Type</label>
-                <select value={entry.degree} onChange={(e) => updateEducationEntry(i, "degree", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <select value={entry.degree} onChange={(e) => updateEducationEntry(i, "degree", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500">
                   <option value="">Select...</option>
                   <option value="High School Diploma">High School Diploma</option>
                   <option value="GED">GED</option>
@@ -706,13 +706,13 @@ export default function ProfileClient({
                   <option value="Bootcamp">Bootcamp</option>
                 </select>
               </div>
-              <input type="text" value={entry.school} onChange={(e) => updateEducationEntry(i, "school", e.target.value)} placeholder="School / University" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-              <input type="text" value={entry.field} onChange={(e) => updateEducationEntry(i, "field", e.target.value)} placeholder="Field of Study" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-              <input type="text" value={entry.graduation_year} onChange={(e) => updateEducationEntry(i, "graduation_year", e.target.value)} placeholder="Graduation Year" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+              <input type="text" value={entry.school} onChange={(e) => updateEducationEntry(i, "school", e.target.value)} placeholder="School / University" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
+              <input type="text" value={entry.field} onChange={(e) => updateEducationEntry(i, "field", e.target.value)} placeholder="Field of Study" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
+              <input type="text" value={entry.graduation_year} onChange={(e) => updateEducationEntry(i, "graduation_year", e.target.value)} placeholder="Graduation Year" className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
             </div>
           </div>
         ))}
-        <button onClick={addEducationEntry} className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">+ Add Education</button>
+        <button onClick={addEducationEntry} className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-violet-400 hover:text-violet-600 transition-colors">+ Add Education</button>
       </Section>
 
       {/* ═══ Work Authorization ═══ */}
@@ -735,7 +735,7 @@ export default function ProfileClient({
           <BooleanToggle label="Will you now or in the future require visa sponsorship?" value={profile.requires_visa_sponsorship} onChange={(v) => update("requires_visa_sponsorship", v)} />
           <div className="pt-3">
             <label className="block text-sm text-gray-700 mb-1">What is your visa / citizenship status?</label>
-            <select value={profile.citizenship_status || ""} onChange={(e) => update("citizenship_status", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+            <select value={profile.citizenship_status || ""} onChange={(e) => update("citizenship_status", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500">
               <option value="">Select...</option>
               <option value="US Citizen">US Citizen</option>
               <option value="Green Card Holder">Green Card / Permanent Resident</option>
@@ -777,7 +777,7 @@ export default function ProfileClient({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-700 mb-1">When can you start?</label>
-              <select value={profile.start_date || ""} onChange={(e) => update("start_date", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              <select value={profile.start_date || ""} onChange={(e) => update("start_date", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500">
                 <option value="">Select...</option>
                 <option value="Immediately">Immediately</option>
                 <option value="1 week">1 week</option>
@@ -789,7 +789,7 @@ export default function ProfileClient({
             </div>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Notice period</label>
-              <select value={profile.notice_period || ""} onChange={(e) => update("notice_period", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              <select value={profile.notice_period || ""} onChange={(e) => update("notice_period", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500">
                 <option value="">Select...</option>
                 <option value="None">None (currently not employed)</option>
                 <option value="1 week">1 week</option>
@@ -803,7 +803,7 @@ export default function ProfileClient({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
             <div>
               <label className="block text-sm text-gray-700 mb-1">Preferred shift</label>
-              <select value={profile.preferred_shift || ""} onChange={(e) => update("preferred_shift", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              <select value={profile.preferred_shift || ""} onChange={(e) => update("preferred_shift", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500">
                 <option value="">Select...</option>
                 <option value="Day">Day shift</option>
                 <option value="Evening">Evening shift</option>
@@ -813,7 +813,7 @@ export default function ProfileClient({
             </div>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Minimum salary requirement</label>
-              <input type="number" value={profile.minimum_salary ?? ""} onChange={(e) => update("minimum_salary", e.target.value ? parseInt(e.target.value) : undefined)} placeholder="e.g. 75000" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+              <input type="number" value={profile.minimum_salary ?? ""} onChange={(e) => update("minimum_salary", e.target.value ? parseInt(e.target.value) : undefined)} placeholder="e.g. 75000" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500" />
             </div>
           </div>
           <BooleanToggle label="Available for relocation?" value={profile.available_for_relocation} onChange={(v) => update("available_for_relocation", v)} />
@@ -840,7 +840,7 @@ export default function ProfileClient({
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-gray-700 mb-1">Gender</label>
-            <select value={profile.eeo_gender || ""} onChange={(e) => update("eeo_gender", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+            <select value={profile.eeo_gender || ""} onChange={(e) => update("eeo_gender", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500">
               <option value="">Prefer not to say</option>
               <option value="Male">Male</option>
               <option value="Female">Female</option>
@@ -851,7 +851,7 @@ export default function ProfileClient({
           </div>
           <div>
             <label className="block text-sm text-gray-700 mb-1">Race / Ethnicity</label>
-            <select value={profile.eeo_race || ""} onChange={(e) => update("eeo_race", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+            <select value={profile.eeo_race || ""} onChange={(e) => update("eeo_race", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500">
               <option value="">Prefer not to say</option>
               <option value="American Indian or Alaska Native">American Indian or Alaska Native</option>
               <option value="Asian">Asian</option>
@@ -865,7 +865,7 @@ export default function ProfileClient({
           </div>
           <div>
             <label className="block text-sm text-gray-700 mb-1">Veteran Status</label>
-            <select value={profile.eeo_veteran_status || ""} onChange={(e) => update("eeo_veteran_status", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+            <select value={profile.eeo_veteran_status || ""} onChange={(e) => update("eeo_veteran_status", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500">
               <option value="">Prefer not to say</option>
               <option value="I am not a protected veteran">I am not a protected veteran</option>
               <option value="I identify as one or more of the classifications of a protected veteran">I identify as a protected veteran</option>
@@ -874,7 +874,7 @@ export default function ProfileClient({
           </div>
           <div>
             <label className="block text-sm text-gray-700 mb-1">Disability Status</label>
-            <select value={profile.eeo_disability_status || ""} onChange={(e) => update("eeo_disability_status", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+            <select value={profile.eeo_disability_status || ""} onChange={(e) => update("eeo_disability_status", e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500">
               <option value="">Prefer not to say</option>
               <option value="Yes, I have a disability">Yes, I have a disability (or previously had)</option>
               <option value="No, I do not have a disability">No, I do not have a disability</option>

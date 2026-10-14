@@ -20,7 +20,8 @@
       if (!applyButton) {
         return { ok: false, reason: "APPLY_BUTTON_MISSING" };
       }
-      applyButton.click();
+      if (dom.clickElement) await dom.clickElement(applyButton);
+      else applyButton.click();
       await dom.sleep(1500);
       return { ok: true };
     },
@@ -54,16 +55,15 @@
         nextButton.getAttribute("aria-label") ||
         nextButton.getAttribute("value") ||
         "Continue";
-      nextButton.click();
+      if (dom.clickElement) await dom.clickElement(nextButton);
+      else nextButton.click();
       await dom.sleep(1500);
       return { ok: true, clickedLabel };
     },
     confirm() {
-      const confirmationText = document.body?.innerText?.toLowerCase() ?? "";
-      return (
-        confirmationText.includes("thank you") ||
-        confirmationText.includes("submitted")
-      );
+      return dom.isConfirmationVisible
+        ? dom.isConfirmationVisible(window.JobGeniusPhrases?.confirmation)
+        : false;
     },
     async runFallback(ctx) {
       const applyResult = await this.clickApplyEntry(ctx);
@@ -79,13 +79,20 @@
         const fillResult = await this.fillKnownFields(ctx);
         if (!fillResult.ok) return { status: "NEEDS_ATTENTION", reason: fillResult.reason };
 
-        const missing = this.extractRequiredFields();
+        let missing = this.extractRequiredFields();
         if (missing.length > 0) {
-          return {
-            status: "NEEDS_ATTENTION",
-            reason: "REQUIRED_FIELDS",
-            missing_fields: missing,
-          };
+          const classifiedCount = await dom.classifyAndFill?.(ctx, missing);
+          if (classifiedCount > 0) {
+            await dom.sleep(400);
+            missing = this.extractRequiredFields();
+          }
+          if (missing.length > 0) {
+            return {
+              status: "NEEDS_ATTENTION",
+              reason: "REQUIRED_FIELDS",
+              missing_fields: missing,
+            };
+          }
         }
 
         const before = dom.captureFlowFingerprint?.() ?? window.location.href;

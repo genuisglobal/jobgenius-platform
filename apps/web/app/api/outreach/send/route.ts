@@ -1,5 +1,6 @@
 import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-access";
 import { getOutreachAdapter } from "@/lib/email/adapter";
+import { logActivity } from "@/lib/feedback-loop";
 import { assertOutreachConsent, getRecruiterOptOut } from "@/lib/outreach-consent";
 import {
   buildAdaptiveFollowUpCopy,
@@ -395,6 +396,18 @@ export async function POST(request: Request) {
       updated_at: nowIso,
     })
     .eq("id", messageId);
+
+  // Log to activity feed (non-blocking)
+  if (thread.job_seeker_id) {
+    logActivity(thread.job_seeker_id, {
+      eventType: "outreach_sent",
+      title: "Outreach email sent",
+      description: `To ${recruiter.name ?? recruiter.email} at ${recruiter.company ?? "unknown company"}`,
+      meta: { message_id: messageId, recruiter_id: recruiter.id, thread_id: thread.id },
+      refType: "outreach_messages",
+      refId: messageId,
+    }).catch((err) => console.error("[outreach:send] activity log failed:", err));
+  }
 
   const noReplyHours = Number(process.env.OUTREACH_NO_REPLY_HOURS ?? 72);
   const nextFollowUpAt = new Date(Date.now() + noReplyHours * 60 * 60 * 1000).toISOString();

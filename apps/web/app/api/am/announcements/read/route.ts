@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Announcement not found." }, { status: 404 });
   }
 
-  await supabaseAdmin
+  const { error: upsertError } = await supabaseAdmin
     .from("announcement_reads")
     .upsert(
       {
@@ -46,6 +46,10 @@ export async function POST(req: NextRequest) {
       },
       { onConflict: "announcement_id,reader_id" }
     );
+
+  if (upsertError) {
+    console.error("[am:announcements] failed to mark announcement read:", upsertError);
+  }
 
   return NextResponse.json({ success: true });
 }

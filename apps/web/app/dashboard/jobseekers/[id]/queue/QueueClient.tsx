@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { isManualQueueCategory } from "@/lib/queue-categories";
 
 type QueueItem = {
   job_post_id: string;
@@ -78,7 +79,7 @@ function getCategory(item: QueueItem, threshold: number) {
   ) {
     return "In Progress";
   }
-  if (item.queue_category === "manual" || item.decision === "OVERRIDDEN_IN") {
+  if (isManualQueueCategory(item.queue_category) || item.decision === "OVERRIDDEN_IN") {
     return "Manual";
   }
   if (item.score >= threshold && item.decision !== "OVERRIDDEN_OUT") {

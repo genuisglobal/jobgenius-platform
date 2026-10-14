@@ -138,7 +138,7 @@ export default function AnswersClient({
                 className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors flex-shrink-0 ${
                   isSaved
                     ? "bg-green-100 text-green-700"
-                    : "bg-blue-600 text-white hover:bg-blue-700"
+                    : "bg-violet-600 text-white hover:bg-violet-700"
                 } disabled:opacity-50`}
               >
                 {saving === q.key ? "Saving..." : isSaved ? "Saved" : "Save"}
@@ -149,7 +149,7 @@ export default function AnswersClient({
               onChange={(e) => setDrafts((d) => ({ ...d, [q.key]: e.target.value }))}
               rows={4}
               placeholder="Write your answer..."
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500 text-sm"
             />
           </div>
         );
@@ -164,14 +164,14 @@ export default function AnswersClient({
             value={customKey}
             onChange={(e) => setCustomKey(e.target.value)}
             placeholder="Question key (e.g. remote_preference)"
-            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
           />
           <input
             type="text"
             value={customText}
             onChange={(e) => setCustomText(e.target.value)}
             placeholder="Question text (e.g. Do you prefer remote or hybrid work?)"
-            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
           />
           <button
             onClick={addCustomQuestion}

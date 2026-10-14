@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAM, supabaseAdmin } from "@/lib/auth";
 import { normalizeAMRole } from "@/lib/auth/roles";
+import { countDistinctAppliedSeekers, SUCCESSFUL_APPLICATION_STATUSES } from "@/lib/application-stats";
 
 // GET /api/admin/analytics
 // Returns platform-wide funnel and AM leaderboard (admin+ only)
@@ -37,25 +38,27 @@ export async function GET(req: NextRequest) {
     // Assigned (has at least one assignment)
     supabaseAdmin.from("job_seeker_assignments").select("job_seeker_id", { count: "exact", head: true }),
     // Applied (has at least one application)
-    supabaseAdmin.from("applications").select("job_seeker_id", { count: "exact", head: true }),
+    countDistinctAppliedSeekers(supabaseAdmin),
     // Interviewed
     supabaseAdmin.from("interviews").select("job_seeker_id", { count: "exact", head: true }),
     // Placed
     supabaseAdmin.from("job_seekers").select("id", { count: "exact", head: true }).not("placed_at", "is", null),
     // Total applications
-    supabaseAdmin.from("applications").select("id", { count: "exact", head: true }),
+    supabaseAdmin.from("application_runs").select("id", { count: "exact", head: true }).in("status", SUCCESSFUL_APPLICATION_STATUSES),
     // Interviews this month
     supabaseAdmin.from("interviews").select("id", { count: "exact", head: true }).gte("scheduled_at", monthStart),
     // Interviews prev month
     supabaseAdmin.from("interviews").select("id", { count: "exact", head: true }).gte("scheduled_at", prevMonthStart).lt("scheduled_at", monthStart),
     // Applications this month
-    supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).gte("applied_at", monthStart),
+    supabaseAdmin.from("application_runs").select("id", { count: "exact", head: true }).in("status", SUCCESSFUL_APPLICATION_STATUSES).gte("applied_at", monthStart),
     // Applications prev month
-    supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).gte("applied_at", prevMonthStart).lt("applied_at", monthStart),
+    supabaseAdmin.from("application_runs").select("id", { count: "exact", head: true }).in("status", SUCCESSFUL_APPLICATION_STATUSES).gte("applied_at", prevMonthStart).lt("applied_at", monthStart),
     // AM leaderboard
     supabaseAdmin
       .from("account_managers")
-      .select("id, full_name, profile_photo_url")
+      // `name`, not `full_name` — and account_managers has no photo column
+      // at all (profile_photo_url belongs to job_seekers).
+      .select("id, name")
       .eq("status", "active")
       .limit(20),
   ]);
@@ -113,8 +116,9 @@ export async function GET(req: NextRequest) {
       const placed = placedMap.get(am.id) ?? 0;
       return {
         id: am.id,
-        full_name: am.full_name,
-        photo: am.profile_photo_url,
+        // Response field stays `full_name` — it is the shape clients consume.
+        full_name: am.name,
+        photo: null,
         total_seekers: total,
         placed,
         interviews: ivMap.get(am.id) ?? 0,

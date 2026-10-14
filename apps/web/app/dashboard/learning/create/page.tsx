@@ -8,6 +8,7 @@ type Seeker = {
   id: string;
   full_name: string | null;
   email: string | null;
+  location?: string | null;
 };
 
 const CATEGORIES = [
@@ -16,6 +17,24 @@ const CATEGORIES = [
   { value: "behavioral", label: "Behavioral" },
   { value: "industry", label: "Industry" },
   { value: "tools", label: "Tools" },
+];
+
+const CREATION_MODES = [
+  {
+    value: "blank",
+    label: "Blank Track",
+    description: "Start from scratch and add lessons manually or with AI later.",
+  },
+  {
+    value: "job_gap_refresh",
+    label: "Job Gap Refresh",
+    description: "Create a refresh track around a target skill and optional job post context.",
+  },
+  {
+    value: "manual_skill_refresh",
+    label: "Manual Skill Refresh",
+    description: "Create a focused refresher for a specific skill the seeker needs to revisit.",
+  },
 ];
 
 export default function CreateLearningTrackPage() {
@@ -29,14 +48,17 @@ export default function CreateLearningTrackPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("general");
+  const [creationMode, setCreationMode] = useState("blank");
+  const [targetSkill, setTargetSkill] = useState("");
+  const [jobPostId, setJobPostId] = useState("");
 
   useEffect(() => {
-    fetch("/api/seekers")
+    fetch("/api/am/jobseekers?pageSize=100")
       .then((res) => res.json())
       .then((data) => {
-        if (data.seekers) setSeekers(data.seekers);
+        if (data.job_seekers) setSeekers(data.job_seekers);
       })
-      .catch(() => {})
+      .catch((err) => console.error("[learning] fetch seekers failed:", err))
       .finally(() => setLoading(false));
   }, []);
 
@@ -56,6 +78,19 @@ export default function CreateLearningTrackPage() {
           title: title.trim(),
           description: description.trim() || null,
           category,
+          creation_mode: creationMode,
+          target_skill:
+            creationMode === "blank"
+              ? null
+              : targetSkill.trim() || null,
+          focus_skills:
+            creationMode === "blank" || !targetSkill.trim()
+              ? []
+              : [targetSkill.trim()],
+          job_post_id:
+            creationMode === "job_gap_refresh"
+              ? jobPostId.trim() || null
+              : null,
         }),
       });
 
@@ -78,7 +113,7 @@ export default function CreateLearningTrackPage() {
       <div className="mb-6">
         <Link
           href="/dashboard/learning"
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="text-sm text-violet-600 hover:text-violet-800"
         >
           &larr; Back to Learning Tracks
         </Link>
@@ -99,16 +134,36 @@ export default function CreateLearningTrackPage() {
               value={seekerId}
               onChange={(e) => setSeekerId(e.target.value)}
               required
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
             >
               <option value="">Select a job seeker</option>
               {seekers.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.full_name || s.email}
+                  {s.full_name || s.email || s.id}
                 </option>
               ))}
             </select>
           )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Creation Mode
+          </label>
+          <select
+            value={creationMode}
+            onChange={(e) => setCreationMode(e.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
+          >
+            {CREATION_MODES.map((mode) => (
+              <option key={mode.value} value={mode.value}>
+                {mode.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-gray-500">
+            {CREATION_MODES.find((mode) => mode.value === creationMode)?.description}
+          </p>
         </div>
 
         <div>
@@ -121,7 +176,7 @@ export default function CreateLearningTrackPage() {
             onChange={(e) => setTitle(e.target.value)}
             required
             placeholder="e.g., React Fundamentals for Frontend Roles"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
           />
         </div>
 
@@ -134,9 +189,45 @@ export default function CreateLearningTrackPage() {
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
             placeholder="Brief description of what this track covers..."
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
           />
         </div>
+
+        {creationMode !== "blank" && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Target Skill {creationMode === "manual_skill_refresh" ? "*" : ""}
+            </label>
+            <input
+              type="text"
+              value={targetSkill}
+              onChange={(e) => setTargetSkill(e.target.value)}
+              placeholder="e.g., React, SQL, Project Management"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Use the main skill the learner needs to refresh first.
+            </p>
+          </div>
+        )}
+
+        {creationMode === "job_gap_refresh" && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Job Post ID
+            </label>
+            <input
+              type="text"
+              value={jobPostId}
+              onChange={(e) => setJobPostId(e.target.value)}
+              placeholder="Optional job_post_id for role-specific refresh context"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Optional. Attach a job post when you want the refresh track tied to a specific role.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -145,7 +236,7 @@ export default function CreateLearningTrackPage() {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
           >
             {CATEGORIES.map((c) => (
               <option key={c.value} value={c.value}>
@@ -162,8 +253,14 @@ export default function CreateLearningTrackPage() {
         <div className="flex gap-3">
           <button
             type="submit"
-            disabled={submitting || !seekerId || !title.trim()}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            disabled={
+              submitting ||
+              !seekerId ||
+              !title.trim() ||
+              (creationMode === "manual_skill_refresh" && !targetSkill.trim()) ||
+              (creationMode === "job_gap_refresh" && !targetSkill.trim() && !jobPostId.trim())
+            }
+            className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors"
           >
             {submitting ? "Creating..." : "Create Track"}
           </button>

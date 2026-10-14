@@ -514,3 +514,174 @@ export function buildStyledJobGeniusReportPdf(
 
   return buildPdfFromPageStreams(pages.map((pageCommands) => pageCommands.join("\n")));
 }
+
+// ─── Payslip PDF (staff payroll, migration 075) ──────────────
+
+export type PayslipPdfLineItem = {
+  label: string;
+  amount: number;
+};
+
+export type PayslipPdfPayload = {
+  employerName?: string;
+  workerName: string;
+  workerEmail?: string | null;
+  jobTitle?: string | null;
+  periodLabel: string;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  payDate?: string | null;
+  currency?: string;
+  earnings: PayslipPdfLineItem[];
+  deductions: PayslipPdfLineItem[];
+  gross: number;
+  totalDeductions: number;
+  net: number;
+  payoutDetails?: string | null;
+  reference?: string | null;
+};
+
+export function buildPayslipPdf(payload: PayslipPdfPayload): Buffer {
+  const pageWidth = 612;
+  const currency = payload.currency || "USD";
+  const employer = payload.employerName || "JobGenius LLC";
+  const money = (n: number) =>
+    (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency });
+  const fmtDate = (iso?: string | null) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-US");
+  };
+
+  const bodyColor: PdfRgb = [0.16, 0.19, 0.24];
+  const mutedColor: PdfRgb = [0.4, 0.45, 0.54];
+  const amountX = 420;
+  const labelX = 56;
+  const commands: string[] = [];
+
+  // background
+  commands.push("1 1 1 rg");
+  commands.push(`0 0 ${pageWidth} 792 re f`);
+
+  // header band
+  commands.push("0.08 0.2 0.44 rg");
+  commands.push(`0 712 ${pageWidth} 80 re f`);
+  pushText(commands, "PAYSLIP", 48, 760, "F2", 24, [1, 1, 1]);
+  pushText(commands, employer, 48, 738, "F1", 11, [0.86, 0.9, 0.98]);
+  pushText(commands, payload.periodLabel, 48, 722, "F1", 10, [0.86, 0.9, 0.98]);
+
+  let y = 688;
+
+  // worker + period info
+  pushText(commands, "Employee", labelX, y, "F2", 10, [0.08, 0.2, 0.44]);
+  pushText(commands, "Pay Details", 340, y, "F2", 10, [0.08, 0.2, 0.44]);
+  y -= 16;
+  pushText(commands, payload.workerName, labelX, y, "F1", 11, bodyColor);
+  pushText(
+    commands,
+    `Pay date: ${fmtDate(payload.payDate)}`,
+    340,
+    y,
+    "F1",
+    10,
+    bodyColor
+  );
+  y -= 14;
+  if (payload.jobTitle) {
+    pushText(commands, payload.jobTitle, labelX, y, "F1", 10, mutedColor);
+  }
+  pushText(
+    commands,
+    `Period: ${fmtDate(payload.periodStart)} – ${fmtDate(payload.periodEnd)}`,
+    340,
+    y,
+    "F1",
+    10,
+    mutedColor
+  );
+  y -= 14;
+  if (payload.workerEmail) {
+    pushText(commands, payload.workerEmail, labelX, y, "F1", 10, mutedColor);
+  }
+  y -= 22;
+
+  const sectionHeader = (title: string) => {
+    commands.push("0.94 0.97 1 rg");
+    commands.push(`48 ${y - 16} 516 20 re f`);
+    pushText(commands, title, labelX, y - 2, "F2", 11, [0.08, 0.2, 0.44]);
+    pushText(commands, "Amount", amountX, y - 2, "F2", 11, [0.08, 0.2, 0.44]);
+    y -= 30;
+  };
+
+  const lineRow = (label: string, amount: number, bold = false) => {
+    const font: PdfFontName = bold ? "F2" : "F1";
+    pushText(commands, label, labelX, y, font, 10.5, bodyColor);
+    pushText(commands, money(amount), amountX, y, font, 10.5, bodyColor);
+    y -= 16;
+  };
+
+  sectionHeader("Earnings");
+  if (payload.earnings.length === 0) {
+    pushText(commands, "No earnings", labelX, y, "F1", 10, mutedColor);
+    y -= 16;
+  } else {
+    payload.earnings.forEach((e) => lineRow(e.label, e.amount));
+  }
+  y -= 4;
+  lineRow("Gross earnings", payload.gross, true);
+  y -= 12;
+
+  sectionHeader("Deductions");
+  if (payload.deductions.length === 0) {
+    pushText(commands, "No deductions", labelX, y, "F1", 10, mutedColor);
+    y -= 16;
+  } else {
+    payload.deductions.forEach((d) => lineRow(d.label, d.amount));
+  }
+  y -= 4;
+  lineRow("Total deductions", payload.totalDeductions, true);
+  y -= 18;
+
+  // net pay highlight box
+  commands.push("0.08 0.2 0.44 rg");
+  commands.push(`48 ${y - 22} 516 34 re f`);
+  pushText(commands, "NET PAY", labelX, y - 4, "F2", 12, [1, 1, 1]);
+  pushText(commands, money(payload.net), amountX, y - 4, "F2", 13, [1, 1, 1]);
+  y -= 44;
+
+  if (payload.reference) {
+    pushText(
+      commands,
+      `Payment reference: ${payload.reference}`,
+      labelX,
+      y,
+      "F1",
+      9.5,
+      mutedColor
+    );
+    y -= 14;
+  }
+  if (payload.payoutDetails) {
+    const lines = wrapTextForPdf(`Payout to: ${payload.payoutDetails}`, 90);
+    lines.forEach((line) => {
+      pushText(commands, line, labelX, y, "F1", 9.5, mutedColor);
+      y -= 13;
+    });
+  }
+
+  // footer
+  commands.push("0.87 0.9 0.95 RG");
+  commands.push("0.5 w");
+  commands.push("48 56 m 564 56 l S");
+  pushText(
+    commands,
+    `${employer} — generated ${new Date().toLocaleDateString("en-US")}. This payslip is a record only.`,
+    48,
+    42,
+    "F1",
+    8.8,
+    mutedColor
+  );
+
+  return buildPdfFromPageStreams([commands.join("\n")]);
+}

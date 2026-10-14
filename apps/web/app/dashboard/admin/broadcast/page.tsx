@@ -12,7 +12,7 @@ export default async function BroadcastPage() {
   const { data: broadcasts } = await supabaseAdmin
     .from("system_announcements")
     .select(
-      "id, subject, body, target_audience, send_email, recipient_count, status, error_detail, sent_at, created_at, account_managers!inner(full_name)"
+      "id, subject, body, target_audience, send_email, recipient_count, status, error_detail, sent_at, created_at, account_managers!inner(name)"
     )
     .order("created_at", { ascending: false })
     .limit(50);

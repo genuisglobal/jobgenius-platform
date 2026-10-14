@@ -32,7 +32,7 @@ type Tab = "upcoming" | "past" | "cancelled";
 
 const statusColors: Record<string, string> = {
   pending_candidate: "#f59e0b",
-  confirmed: "#2563eb",
+  confirmed: "#7c3aed",
   completed: "#16a34a",
   cancelled: "#dc2626",
   no_show: "#9333ea",
@@ -98,7 +98,7 @@ export default function InterviewsClient({ interviews }: Props) {
             onClick={() => setTab(t.key)}
             style={{
               padding: "8px 16px",
-              border: tab === t.key ? "2px solid #2563eb" : "1px solid #e5e7eb",
+              border: tab === t.key ? "2px solid #7c3aed" : "1px solid #e5e7eb",
               borderRadius: 8,
               background: tab === t.key ? "#eff6ff" : "#fff",
               cursor: "pointer",

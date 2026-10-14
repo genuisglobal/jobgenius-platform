@@ -231,10 +231,14 @@ export async function POST(request: Request) {
   if (updatedSeeker) {
     const completion = calculateProfileCompletion(updatedSeeker as Record<string, unknown>);
     if (typeof completion.percentage === "number") {
-      await supabaseAdmin
+      const { error: completionError } = await supabaseAdmin
         .from("job_seekers")
         .update({ profile_completion: completion.percentage })
         .eq("id", auth.user.id);
+
+      if (completionError) {
+        console.error("[portal:resume] failed to update profile_completion:", completionError);
+      }
     }
   }
 
@@ -261,7 +265,7 @@ export async function POST(request: Request) {
 async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
     // Try pdf-parse if available
-    const pdfParse = await import("pdf-parse").then((m) => (m as { default?: unknown }).default || m).catch(() => null) as ((buf: Buffer) => Promise<{ text: string }>) | null;
+    const pdfParse = await import("pdf-parse").then((m) => (m as { default?: unknown }).default || m).catch((err) => { console.error("[resume] pdf-parse import failed:", err); return null; }) as ((buf: Buffer) => Promise<{ text: string }>) | null;
     if (pdfParse) {
       const data = await pdfParse(buffer);
       return data.text || "";
@@ -288,7 +292,8 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
       }
     }
     return matches.join(" ").slice(0, 50000);
-  } catch {
+  } catch (err) {
+    console.error("[resume] PDF fallback text extraction failed:", err);
     return "";
   }
 }
@@ -301,7 +306,7 @@ async function extractDocxText(buffer: Buffer): Promise<string> {
     // DOCX files are ZIP archives containing XML
     // Try to use mammoth if available
     // Dynamic require to avoid TS module resolution error (mammoth is optional)
-    const mammoth = await import("mammoth").catch(() => null) as { extractRawText?: (opts: { buffer: Buffer }) => Promise<{ value: string }> } | null;
+    const mammoth = await import("mammoth").catch((err) => { console.error("[resume] mammoth import failed:", err); return null; }) as { extractRawText?: (opts: { buffer: Buffer }) => Promise<{ value: string }> } | null;
     if (mammoth?.extractRawText) {
       const result = await mammoth.extractRawText({ buffer });
       return result.value || "";
@@ -312,7 +317,7 @@ async function extractDocxText(buffer: Buffer): Promise<string> {
 
   // Fallback: basic XML text extraction from DOCX
   try {
-    const JSZip = await import("jszip").then((m) => m.default || m).catch(() => null);
+    const JSZip = await import("jszip").then((m) => m.default || m).catch((err) => { console.error("[resume] jszip import failed:", err); return null; });
     if (JSZip) {
       const zip = await JSZip.loadAsync(buffer);
       const docXml = await zip.file("word/document.xml")?.async("string");
@@ -321,8 +326,8 @@ async function extractDocxText(buffer: Buffer): Promise<string> {
         return docXml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 50000);
       }
     }
-  } catch {
-    // Silent fallback
+  } catch (err) {
+    console.error("[resume] DOCX fallback text extraction failed:", err);
   }
 
   return "";

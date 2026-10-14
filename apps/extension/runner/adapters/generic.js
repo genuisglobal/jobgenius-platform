@@ -2,7 +2,9 @@
   const dom = window.JobGeniusDom;
   const registry = window.JobGeniusAdapterRegistry;
 
-  const DEFAULT_SUBMIT_BUTTONS = [
+  // Shared, i18n-seeded phrase lists (runner/phrases.js); inline fallbacks keep
+  // the adapter working if that file isn't present.
+  const DEFAULT_SUBMIT_BUTTONS = window.JobGeniusPhrases?.submit ?? [
     "next",
     "continue",
     "save and continue",
@@ -13,7 +15,7 @@
     "begin application",
   ];
 
-  const APPLY_ENTRY_BUTTONS = [
+  const APPLY_ENTRY_BUTTONS = window.JobGeniusPhrases?.apply ?? [
     "easy apply",
     "apply now",
     "apply on company site",
@@ -44,19 +46,42 @@
         ? dom.findClickableByText(entryHints)
         : dom.findButtonByText(entryHints);
       if (!applyButton) {
-        const alreadyInApplication = Boolean(
-          document.querySelector(
-            "form input, form textarea, form select, form input[type='file'], input[required], textarea[required], select[required], input[aria-required='true'], textarea[aria-required='true'], select[aria-required='true']"
-          )
-        );
+        // Deep check: sees into shadow roots and same-origin iframes, so an
+        // embedded Greenhouse/Lever form on a company career page counts as
+        // "already in the application".
+        const alreadyInApplication = dom.hasApplicationFormFields
+          ? dom.hasApplicationFormFields()
+          : Boolean(
+              document.querySelector(
+                "form input, form textarea, form select, form input[type='file'], input[required], textarea[required], select[required], input[aria-required='true'], textarea[aria-required='true'], select[aria-required='true']"
+              )
+            );
         if (alreadyInApplication) {
           return { ok: true };
         }
+
+        // Last resort: the application may live in a CROSS-ORIGIN iframe on
+        // an unknown host (same-origin frames are reachable via
+        // queryAllDeep's descend; known-ATS frames self-elect their own
+        // runner). Navigate the tab to the iframe's src and continue there —
+        // rearmAfterNavigation restarts the runner after the navigation
+        // destroys this instance.
+        const iframeSrc = dom.findApplicationIframeSrc?.();
+        if (iframeSrc) {
+          if (ctx?.rearmAfterNavigation) {
+            await ctx.rearmAfterNavigation();
+          }
+          window.location.href = iframeSrc;
+          await dom.sleep(3000); // navigation kills this instance
+          return { ok: true };
+        }
+
         return { ok: false, reason: "APPLY_BUTTON_MISSING" };
       }
 
       const beforeUrl = window.location.href;
-      applyButton.click();
+      if (dom.clickElement) await dom.clickElement(applyButton);
+      else applyButton.click();
       await dom.sleep(1200);
 
       if (window.location.href !== beforeUrl) {
@@ -76,8 +101,11 @@
     async fillKnownFields(ctx) {
       const fillSummary = dom.fillAllFields(ctx.defaultEmail, ctx.profile, ctx.job);
       if (ctx.resumeUrl) {
-        const upload = await dom.uploadResume(ctx.resumeUrl);
-        if (!upload.ok) {
+        let upload = await dom.uploadResume(ctx.resumeUrl);
+        if (!upload.ok && dom.uploadViaDragDrop) {
+          upload = await dom.uploadViaDragDrop(ctx.resumeUrl);
+        }
+        if (!upload.ok && upload.reason !== "NO_INPUT_OR_URL" && upload.reason !== "NO_UPLOAD_ELEMENT") {
           return { ok: false, reason: "RESUME_UPLOAD_FAILED" };
         }
       }
@@ -105,21 +133,16 @@
         submitButton.getAttribute("aria-label") ||
         submitButton.getAttribute("value") ||
         "Continue";
-      submitButton.click();
+      if (dom.clickElement) await dom.clickElement(submitButton);
+      else submitButton.click();
       await dom.sleep(1400);
       return { ok: true, clickedLabel };
     },
 
     confirm() {
-      const text = document.body?.innerText?.toLowerCase() ?? "";
-      return (
-        text.includes("thank you") ||
-        text.includes("application submitted") ||
-        text.includes("successfully applied") ||
-        text.includes("application received") ||
-        text.includes("we have received") ||
-        text.includes("application complete")
-      );
+      return dom.isConfirmationVisible
+        ? dom.isConfirmationVisible(window.JobGeniusPhrases?.confirmation)
+        : false;
     },
 
     async runFallback(ctx) {
@@ -146,13 +169,22 @@
           return { status: "NEEDS_ATTENTION", reason: fillResult.reason };
         }
 
-        const missing = this.extractRequiredFields();
+        let missing = this.extractRequiredFields();
         if (missing.length > 0) {
-          return {
-            status: "NEEDS_ATTENTION",
-            reason: "REQUIRED_FIELDS",
-            missing_fields: missing,
-          };
+          // Ask the server's shared fill brain (learned rules → screening →
+          // LLM) to resolve the remaining required fields, then re-check.
+          const classifiedCount = await dom.classifyAndFill?.(ctx, missing);
+          if (classifiedCount > 0) {
+            await dom.sleep(400);
+            missing = this.extractRequiredFields();
+          }
+          if (missing.length > 0) {
+            return {
+              status: "NEEDS_ATTENTION",
+              reason: "REQUIRED_FIELDS",
+              missing_fields: missing,
+            };
+          }
         }
 
         if (ctx.dryRun) {

@@ -171,7 +171,7 @@ export default function MatchCard({ match, onStatusUpdate, setMsg }: MatchCardPr
               href={job.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto text-blue-500 hover:underline text-xs"
+              className="ml-auto text-violet-500 hover:underline text-xs"
             >
               View job
             </a>
@@ -198,7 +198,7 @@ export default function MatchCard({ match, onStatusUpdate, setMsg }: MatchCardPr
               type="text"
               value={draft.subject}
               onChange={(e) => setDraft({ ...draft, subject: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
             />
           </div>
           <div>
@@ -209,7 +209,7 @@ export default function MatchCard({ match, onStatusUpdate, setMsg }: MatchCardPr
               onChange={(e) =>
                 setDraft({ ...draft, body: `<p>${e.target.value.replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br/>")}</p>` })
               }
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
             />
           </div>
           {!contact?.email && (
@@ -227,7 +227,7 @@ export default function MatchCard({ match, onStatusUpdate, setMsg }: MatchCardPr
             <button
               onClick={handleSendEmail}
               disabled={!contact?.email || sendingEmail}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
+              className="px-3 py-1.5 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 disabled:opacity-50 transition"
             >
               {sendingEmail ? "Sending…" : `Send to ${contact?.email ?? "—"}`}
             </button>
@@ -243,7 +243,7 @@ export default function MatchCard({ match, onStatusUpdate, setMsg }: MatchCardPr
             rows={4}
             value={textDraft}
             onChange={(e) => setTextDraft(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
           />
           <div className="flex gap-2 justify-end">
             <button
@@ -257,7 +257,7 @@ export default function MatchCard({ match, onStatusUpdate, setMsg }: MatchCardPr
                 navigator.clipboard.writeText(textDraft);
                 setMsg({ type: "success", text: "Copied to clipboard." });
               }}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition"
+              className="px-3 py-1.5 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 transition"
             >
               Copy to clipboard
             </button>
@@ -271,7 +271,7 @@ export default function MatchCard({ match, onStatusUpdate, setMsg }: MatchCardPr
           <button
             onClick={handleGenerateEmail}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition"
+            className="px-3 py-1.5 text-sm font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 disabled:opacity-50 transition"
           >
             {loading ? "Generating…" : "Generate Email"}
           </button>

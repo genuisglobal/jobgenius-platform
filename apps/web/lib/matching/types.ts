@@ -137,6 +137,8 @@ export interface MatchResult {
     matched_skills: string[];
     missing_skills: string[];
     title_hits: string[];
+    /** Hard-disqualifier reasons; empty when the job is not disqualified. */
+    disqualifiers: string[];
   };
 }
 

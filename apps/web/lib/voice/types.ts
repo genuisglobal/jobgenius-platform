@@ -4,7 +4,7 @@ export const VOICE_CALL_TYPES = [
   "follow_up",
   "discovery",
   "check_in",
-  "interview_prep",
+  "interview_warmup",
   "upsell_retention",
 ] as const;
 

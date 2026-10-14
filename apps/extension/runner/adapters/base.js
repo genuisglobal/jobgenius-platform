@@ -23,5 +23,10 @@
     getAdapter,
     getAllAdapters,
     resolveAdapter,
+    // Version of the adapter bundle shipped with this extension. Bump this when
+    // the per-ATS host/hint tables change so the server-side adapter_versions
+    // comparison (see runner/index.js checkAdapterDrift) can flag a stale
+    // extension. Keep in sync with the cloud runner's adapter tables.
+    bundleVersion: "1",
   };
 })();

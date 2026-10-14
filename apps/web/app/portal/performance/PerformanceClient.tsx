@@ -84,7 +84,7 @@ export default function PerformanceClient({
           <div className="flex-1">
             <div className="w-full bg-gray-200 rounded-full h-4">
               <div
-                className="bg-blue-600 h-4 rounded-full transition-all duration-500"
+                className="bg-violet-600 h-4 rounded-full transition-all duration-500"
                 style={{ width: `${stats.percentile}%` }}
               />
             </div>
@@ -95,7 +95,7 @@ export default function PerformanceClient({
             </div>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-bold text-blue-600">
+            <p className="text-2xl font-bold text-violet-600">
               Top {100 - stats.percentile}%
             </p>
             <p className="text-xs text-gray-500">
@@ -239,7 +239,7 @@ export default function PerformanceClient({
 
 const outcomeStyles = {
   passed: "bg-green-100 text-green-700",
-  advanced: "bg-blue-100 text-blue-700",
+  advanced: "bg-violet-100 text-violet-700",
   offer: "bg-emerald-100 text-emerald-700",
   failed: "bg-red-100 text-red-700",
   rejected: "bg-red-100 text-red-600",
@@ -262,7 +262,7 @@ function StatCard({
     green: "text-green-600",
     red: "text-red-600",
     yellow: "text-yellow-600",
-    blue: "text-blue-600",
+    blue: "text-violet-600",
   };
 
   return (

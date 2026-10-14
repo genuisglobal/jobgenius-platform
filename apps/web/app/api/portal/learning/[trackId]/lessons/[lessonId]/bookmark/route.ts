@@ -40,10 +40,14 @@ export async function POST(
 
   if (existing) {
     // Remove bookmark
-    await supabaseAdmin
+    const { error: deleteError } = await supabaseAdmin
       .from("learning_bookmarks")
       .delete()
       .eq("id", existing.id);
+
+    if (deleteError) {
+      console.error("[portal:learning] failed to remove bookmark:", deleteError);
+    }
 
     return Response.json({ bookmarked: false });
   }

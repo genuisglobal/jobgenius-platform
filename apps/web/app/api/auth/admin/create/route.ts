@@ -1,4 +1,5 @@
 import { signUp, supabaseAdmin, requireAdmin } from "@/lib/auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 /**
  * POST /api/auth/admin/create
@@ -10,6 +11,25 @@ import { signUp, supabaseAdmin, requireAdmin } from "@/lib/auth";
  *   - The ADMIN_SECRET header matching the ADMIN_SECRET env var (for bootstrapping)
  */
 export async function POST(request: Request) {
+  const adminCreateRateLimit = await enforceRateLimit({
+    request,
+    scope: "auth_admin_create",
+    identifier: "global",
+    limit: 5,
+    windowSeconds: 60,
+    blockSeconds: 120,
+  });
+
+  if (!adminCreateRateLimit.allowed) {
+    return Response.json(
+      { success: false, error: "Too many requests. Please try again later." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(Math.max(1, adminCreateRateLimit.retryAfterSeconds)) },
+      }
+    );
+  }
+
   // Check authorization: admin session OR bootstrap secret
   const adminSecret = process.env.ADMIN_SECRET;
   const providedSecret = request.headers.get("x-admin-secret");

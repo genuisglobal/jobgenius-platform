@@ -95,7 +95,7 @@ export default async function BookmarksPage() {
         <h1 className="text-2xl font-bold text-gray-900">Bookmarks</h1>
         <Link
           href="/portal/learning"
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="text-sm text-violet-600 hover:text-violet-800"
         >
           &larr; Back to Learning
         </Link>

@@ -21,7 +21,7 @@ const CLASSIFICATION_LABELS: Record<string, { label: string; color: string }> = 
   rejection: { label: "Rejection", color: "bg-red-100 text-red-800" },
   interview_invite: { label: "Interview Invite", color: "bg-green-100 text-green-800" },
   offer: { label: "Offer", color: "bg-emerald-100 text-emerald-800" },
-  follow_up: { label: "Follow-up", color: "bg-blue-100 text-blue-800" },
+  follow_up: { label: "Follow-up", color: "bg-violet-100 text-violet-800" },
   verification: { label: "Verification", color: "bg-yellow-100 text-yellow-800" },
   application_confirmation: { label: "Confirmation", color: "bg-indigo-100 text-indigo-800" },
   other: { label: "Other", color: "bg-gray-100 text-gray-700" },
@@ -125,7 +125,7 @@ export default function InboxPage() {
               }}
               className={`px-3 py-2 rounded-full text-sm font-medium transition-colors ${
                 filter === opt.value
-                  ? "bg-blue-600 text-white"
+                  ? "bg-violet-600 text-white"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
@@ -176,7 +176,7 @@ export default function InboxPage() {
                   }}
                   className={`w-full text-left p-4 rounded-lg border transition-colors ${
                     isSelected
-                      ? "border-blue-500 bg-blue-50"
+                      ? "border-violet-500 bg-violet-50"
                       : "border-gray-200 bg-white hover:border-gray-300"
                   }`}
                 >
@@ -256,12 +256,12 @@ export default function InboxPage() {
                     onChange={(e) => setReplyBody(e.target.value)}
                     placeholder="Type your reply..."
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 resize-none"
                   />
                   <button
                     onClick={handleReply}
                     disabled={replying || !replyBody.trim()}
-                    className="mt-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="mt-2 px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {replying ? "Sending..." : "Send Reply"}
                   </button>

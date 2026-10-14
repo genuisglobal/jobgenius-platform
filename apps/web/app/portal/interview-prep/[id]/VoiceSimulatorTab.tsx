@@ -11,6 +11,29 @@ type Turn = {
   content: string;
   score: number | null;
   feedback: string | null;
+  star_score?: number | null;
+  relevance_score?: number | null;
+  specificity_score?: number | null;
+  confidence_coaching?: string | null;
+  rewrite_suggestions?: string[] | null;
+};
+
+type FeedbackReport = {
+  summary?: string;
+  strengths?: string[];
+  weaknesses?: string[];
+  star_breakdown?: {
+    situation?: string;
+    task?: string;
+    action?: string;
+    result?: string;
+  };
+  improvement_plan?: string[];
+  competencies?: {
+    communication?: number;
+    relevance?: number;
+    star?: number;
+  };
 };
 
 type VoiceSession = {
@@ -20,6 +43,11 @@ type VoiceSession = {
   total_turns: number;
   overall_score: number | null;
   overall_feedback: string | null;
+  star_score?: number | null;
+  communication_score?: number | null;
+  relevance_score?: number | null;
+  scored_by?: string | null;
+  feedback_report?: FeedbackReport | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
@@ -101,6 +129,123 @@ function buildInstructions(persona: string, context: JobContext | null) {
   return `You are ${personaText}. You are conducting a mock interview for the position of ${jobTitle}${company}.\n\nRules:\n- Ask one question at a time\n- Keep questions concise and role-specific\n- Use relevant follow-up questions\n- After 6-8 exchanges, wrap up and ask if the candidate has questions\n- Do not mention you are AI${description}`;
 }
 
+function CompetencyBar({ label, value }: { label: string; value: number | null }) {
+  if (typeof value !== "number") return null;
+  const pct = Math.min(Math.max(value, 0), 100);
+  const color = pct >= 80 ? "bg-green-500" : pct >= 60 ? "bg-violet-500" : "bg-amber-500";
+  return (
+    <div>
+      <div className="flex justify-between text-xs text-gray-600 mb-1">
+        <span>{label}</span>
+        <span className="font-medium">{pct}%</span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+        <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function FeedbackReportCard({
+  report,
+  starScore,
+  communicationScore,
+  relevanceScore,
+}: {
+  report: FeedbackReport;
+  starScore: number | null;
+  communicationScore: number | null;
+  relevanceScore: number | null;
+}) {
+  const star = report.competencies?.star ?? starScore;
+  const communication = report.competencies?.communication ?? communicationScore;
+  const relevance = report.competencies?.relevance ?? relevanceScore;
+  const star_breakdown = report.star_breakdown ?? {};
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 space-y-4">
+      <h4 className="text-sm font-semibold text-gray-900">Feedback Report</h4>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <CompetencyBar label="STAR structure" value={star} />
+        <CompetencyBar label="Communication" value={communication} />
+        <CompetencyBar label="Relevance" value={relevance} />
+      </div>
+
+      {(report.strengths?.length || report.weaknesses?.length) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {report.strengths && report.strengths.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-green-700 mb-1">Strengths</p>
+              <ul className="text-xs text-gray-700 list-disc list-inside space-y-0.5">
+                {report.strengths.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {report.weaknesses && report.weaknesses.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-amber-700 mb-1">Areas to improve</p>
+              <ul className="text-xs text-gray-700 list-disc list-inside space-y-0.5">
+                {report.weaknesses.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(star_breakdown.situation ||
+        star_breakdown.task ||
+        star_breakdown.action ||
+        star_breakdown.result) && (
+        <div>
+          <p className="text-xs font-semibold text-gray-700 mb-1">STAR breakdown</p>
+          <dl className="text-xs text-gray-700 space-y-0.5">
+            {star_breakdown.situation && (
+              <div>
+                <dt className="inline font-medium">Situation: </dt>
+                <dd className="inline">{star_breakdown.situation}</dd>
+              </div>
+            )}
+            {star_breakdown.task && (
+              <div>
+                <dt className="inline font-medium">Task: </dt>
+                <dd className="inline">{star_breakdown.task}</dd>
+              </div>
+            )}
+            {star_breakdown.action && (
+              <div>
+                <dt className="inline font-medium">Action: </dt>
+                <dd className="inline">{star_breakdown.action}</dd>
+              </div>
+            )}
+            {star_breakdown.result && (
+              <div>
+                <dt className="inline font-medium">Result: </dt>
+                <dd className="inline">{star_breakdown.result}</dd>
+              </div>
+            )}
+          </dl>
+        </div>
+      )}
+
+      {report.improvement_plan && report.improvement_plan.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-700 mb-1">Improvement plan</p>
+          <ol className="text-xs text-gray-700 list-decimal list-inside space-y-0.5">
+            {report.improvement_plan.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
   const [sessions, setSessions] = useState<VoiceSession[]>([]);
   const [activeSession, setActiveSession] = useState<VoiceSession | null>(null);
@@ -125,7 +270,7 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
       .then((data) => {
         if (data?.sessions) setSessions(data.sessions);
       })
-      .catch(() => {});
+      .catch((err) => console.error("[voice-sim] fetch sessions failed:", err));
   }, [loaded, prepId]);
 
   useEffect(() => {
@@ -143,7 +288,7 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
           });
         }
       })
-      .catch(() => {});
+      .catch((err) => console.error("[voice-sim] fetch job context failed:", err));
   }, [prepId]);
 
   useEffect(() => {
@@ -171,6 +316,8 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
     try {
       const tokenRes = await fetch(`/api/portal/interview-prep/${prepId}/realtime-token`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persona }),
       });
       if (!tokenRes.ok) {
         const msg = await tokenRes.text();
@@ -184,7 +331,10 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
 
       const agent = new RealtimeAgent({
         name: "JobGenius Interviewer",
-        instructions: buildInstructions(persona, jobContext),
+        instructions:
+          typeof tokenData?.instructions === "string" && tokenData.instructions
+            ? tokenData.instructions
+            : buildInstructions(persona, jobContext),
       });
 
       const session = new RealtimeSession(agent, {
@@ -318,7 +468,7 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
         <div className="flex items-center justify-between gap-2 mb-4">
           <button
             onClick={handleBack}
-            className="text-sm text-blue-600 hover:text-blue-800 flex-shrink-0"
+            className="text-sm text-violet-600 hover:text-violet-800 flex-shrink-0"
           >
             &larr; Back
           </button>
@@ -338,7 +488,7 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
         </div>
 
         {connecting && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700 mb-4">
+          <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 text-sm text-violet-700 mb-4">
             Connecting live voice session...
           </div>
         )}
@@ -353,7 +503,21 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
                 {activeSession.overall_feedback}
               </p>
             )}
+            {activeSession.scored_by === "heuristic" && (
+              <p className="text-[11px] text-green-600/70 mt-1">
+                AI coaching was unavailable — scored with the built-in rubric.
+              </p>
+            )}
           </div>
+        )}
+
+        {isCompleted && activeSession.feedback_report && (
+          <FeedbackReportCard
+            report={activeSession.feedback_report}
+            starScore={activeSession.star_score ?? null}
+            communicationScore={activeSession.communication_score ?? null}
+            relevanceScore={activeSession.relevance_score ?? null}
+          />
         )}
 
         <div className="bg-white rounded-lg shadow p-3 sm:p-4 mb-4 max-h-[60vh] sm:max-h-96 overflow-y-auto">
@@ -368,21 +532,40 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
                 <div
                   className={`max-w-[85%] sm:max-w-[80%] rounded-lg p-3 ${
                     turn.speaker === "candidate"
-                      ? "bg-blue-600 text-white"
+                      ? "bg-violet-600 text-white"
                       : "bg-gray-100 text-gray-900"
                   }`}
                 >
                   <p className="text-sm">{turn.content}</p>
                   {turn.speaker === "candidate" && turn.score !== null && (
-                    <div className="mt-2 pt-2 border-t border-blue-500">
-                      <span className="text-xs text-blue-200">
+                    <div className="mt-2 pt-2 border-t border-violet-500">
+                      <span className="text-xs text-violet-200">
                         Score: {turn.score}%
+                        {typeof turn.star_score === "number"
+                          ? ` · STAR ${turn.star_score}`
+                          : ""}
+                        {typeof turn.relevance_score === "number"
+                          ? ` · Relevance ${turn.relevance_score}`
+                          : ""}
                       </span>
                       {turn.feedback && (
-                        <p className="text-xs text-blue-200 mt-0.5">
+                        <p className="text-xs text-violet-200 mt-0.5">
                           {turn.feedback}
                         </p>
                       )}
+                      {turn.confidence_coaching && (
+                        <p className="text-xs text-violet-200/90 mt-1">
+                          Coaching: {turn.confidence_coaching}
+                        </p>
+                      )}
+                      {Array.isArray(turn.rewrite_suggestions) &&
+                        turn.rewrite_suggestions.length > 0 && (
+                          <ul className="text-xs text-violet-200/90 mt-1 list-disc list-inside space-y-0.5">
+                            {turn.rewrite_suggestions.map((s, i) => (
+                              <li key={i}>{s}</li>
+                            ))}
+                          </ul>
+                        )}
                     </div>
                   )}
                 </div>
@@ -423,7 +606,7 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
               onClick={() => setPersona(p.value)}
               className={`px-3 py-2.5 sm:py-2 text-sm rounded-lg border-2 transition-colors ${
                 persona === p.value
-                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  ? "border-violet-500 bg-violet-50 text-violet-700"
                   : "border-gray-200 text-gray-600 hover:border-gray-300"
               }`}
             >
@@ -435,7 +618,7 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
         <button
           onClick={startSession}
           disabled={creating}
-          className="px-6 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors w-full sm:w-auto"
+          className="px-6 py-3 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors w-full sm:w-auto"
         >
           {creating ? "Starting..." : "Start Live Interview"}
         </button>
@@ -517,7 +700,7 @@ export default function VoiceSimulatorTab({ prepId }: { prepId: string }) {
               <button
                 onClick={() => handleConsent(consentAccepted)}
                 disabled={!consentAccepted}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 text-sm bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50"
               >
                 Agree & Start
               </button>

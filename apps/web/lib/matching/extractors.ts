@@ -72,6 +72,163 @@ export function extractSalaryRange(text: string): {
   return { min: numbers[0], max: numbers[numbers.length - 1] };
 }
 
+function normalizeSalarySourceText(value: string | null | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/Ã¢â‚¬â€œ|Ã¢â‚¬â€/g, "-")
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseSalaryAmount(raw: string, unit?: string | null) {
+  const numeric = Number(raw.replace(/,/g, ""));
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+
+  if (unit === "k") {
+    return Math.round(numeric * 1000);
+  }
+
+  if (numeric >= 1_000) {
+    return Math.round(numeric);
+  }
+
+  return null;
+}
+
+function annualizeHourlyRate(amount: number) {
+  return Math.round(amount * 2080);
+}
+
+function maybeAnnualizeRate(amount: number, qualifier: string | undefined) {
+  if (!qualifier) {
+    return amount;
+  }
+
+  return /hour|hr/.test(qualifier) ? annualizeHourlyRate(amount) : amount;
+}
+
+export function extractSalaryRangeFromSources(
+  ...texts: Array<string | null | undefined>
+): {
+  min: number | null;
+  max: number | null;
+} {
+  const lower = texts
+    .map(normalizeSalarySourceText)
+    .filter(Boolean)
+    .join("\n");
+  if (!lower) {
+    return { min: null, max: null };
+  }
+
+  const numbers: number[] = [];
+  const rangeSeparator = "(?:-| to |–|—)";
+  const currency = "(?:usd|cad|aud|eur|gbp|us\\$|ca\\$|€|£|\\$)?\\s*";
+
+  const rangePatternK = new RegExp(
+    `${currency}(\\d{2,3}(?:\\.\\d{1,2})?)\\s*(k)\\s*${rangeSeparator}\\s*${currency}(\\d{2,3}(?:\\.\\d{1,2})?)\\s*(k)(?:\\s*(/\\s*hr|/\\s*hour|per hour|hourly))?`,
+    "i"
+  );
+  let match = rangePatternK.exec(lower);
+  if (match) {
+    const min = parseSalaryAmount(match[1], match[2]);
+    const max = parseSalaryAmount(match[3], match[4]);
+    if (min !== null && max !== null) {
+      return {
+        min: maybeAnnualizeRate(min, match[5]),
+        max: maybeAnnualizeRate(max, match[5]),
+      };
+    }
+  }
+
+  const hourlyRangePattern = new RegExp(
+    `${currency}(\\d{2,3}(?:\\.\\d{1,2})?)\\s*${rangeSeparator}\\s*${currency}(\\d{2,3}(?:\\.\\d{1,2})?)(?:\\s*(/\\s*hr|/\\s*hour|per hour|hourly))`,
+    "i"
+  );
+  match = hourlyRangePattern.exec(lower);
+  if (match) {
+    const min = Number(match[1]);
+    const max = Number(match[2]);
+    if (Number.isFinite(min) && Number.isFinite(max)) {
+      return {
+        min: annualizeHourlyRate(min),
+        max: annualizeHourlyRate(max),
+      };
+    }
+  }
+
+  const rangePatternFull = new RegExp(
+    `${currency}(\\d{2,3}(?:,\\d{3})+|\\d{5,6})(?:\\.\\d{1,2})?\\s*${rangeSeparator}\\s*${currency}(\\d{2,3}(?:,\\d{3})+|\\d{5,6})(?:\\.\\d{1,2})?(?:\\s*(/\\s*hr|/\\s*hour|per hour|hourly))?`,
+    "i"
+  );
+  match = rangePatternFull.exec(lower);
+  if (match) {
+    const min = parseSalaryAmount(match[1], null);
+    const max = parseSalaryAmount(match[2], null);
+    if (min !== null && max !== null) {
+      return {
+        min: maybeAnnualizeRate(min, match[3]),
+        max: maybeAnnualizeRate(max, match[3]),
+      };
+    }
+  }
+
+  const boundPattern = new RegExp(
+    `(?:from|starting at|up to|maximum|max|minimum|min|salary|compensation|pay range)\\s*[:\\-]?\\s*${currency}(\\d{2,3}(?:\\.\\d{1,2})?)(\\s*k)?(?:\\s*(/\\s*hr|/\\s*hour|per hour|hourly))?`,
+    "i"
+  );
+  match = boundPattern.exec(lower);
+  if (match) {
+    const amount = parseSalaryAmount(match[1], match[2]?.trim() === "k" ? "k" : null);
+    if (amount !== null) {
+      const normalized = maybeAnnualizeRate(amount, match[3]);
+      if (/up to|maximum|max/.test(match[0])) {
+        return { min: null, max: normalized };
+      }
+      return { min: normalized, max: normalized };
+    }
+  }
+
+  const kRegex = new RegExp(
+    `${currency}(\\d{2,3}(?:\\.\\d{1,2})?)\\s*k(?:\\s*(/\\s*hr|/\\s*hour|per hour|hourly))?`,
+    "gi"
+  );
+  let kMatch = kRegex.exec(lower);
+  while (kMatch) {
+    const parsed = parseSalaryAmount(kMatch[1], "k");
+    if (parsed !== null) {
+      numbers.push(maybeAnnualizeRate(parsed, kMatch[2]));
+    }
+    kMatch = kRegex.exec(lower);
+  }
+
+  const fullRegex = new RegExp(
+    `${currency}(\\d{2,3}(?:,\\d{3})+|\\d{5,6})(?:\\.\\d{1,2})?(?:\\s*(/\\s*hr|/\\s*hour|per hour|hourly))?`,
+    "gi"
+  );
+  let fullMatch = fullRegex.exec(lower);
+  while (fullMatch) {
+    const parsed = parseSalaryAmount(fullMatch[1], null);
+    if (parsed !== null) {
+      numbers.push(maybeAnnualizeRate(parsed, fullMatch[2]));
+    }
+    fullMatch = fullRegex.exec(lower);
+  }
+
+  if (numbers.length === 0) {
+    return { min: null, max: null };
+  }
+  if (numbers.length === 1) {
+    return { min: numbers[0], max: numbers[0] };
+  }
+
+  numbers.sort((a, b) => a - b);
+  return { min: numbers[0], max: numbers[numbers.length - 1] };
+}
+
 // ============================================================================
 // EXPERIENCE EXTRACTION
 // ============================================================================
@@ -202,7 +359,10 @@ export function extractWorkType(
   location: string | null,
   description: string
 ): string | null {
-  const combined = `${location ?? ""} ${description}`.toLowerCase();
+  const combined = `${location ?? ""} ${description}`
+    .toLowerCase()
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/\s+/g, " ");
 
   // Remote indicators
   if (
@@ -564,11 +724,12 @@ export function parseJobPost(
   title: string,
   company: string | null,
   location: string | null,
-  description: string | null
+  description: string | null,
+  salaryText?: string | null
 ): ParsedJobData {
   const desc = description ?? "";
 
-  const salary = extractSalaryRange(desc);
+  const salary = extractSalaryRangeFromSources(salaryText, desc);
   const experience = extractYearsExperience(desc);
   const skills = extractSkills(desc);
 

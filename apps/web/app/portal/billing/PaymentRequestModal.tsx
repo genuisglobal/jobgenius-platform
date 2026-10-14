@@ -89,8 +89,8 @@ export default function PaymentRequestModal({
                   key={m.value}
                   className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
                     method === m.value
-                      ? "border-blue-600 bg-blue-50"
-                      : "border-gray-200 hover:border-blue-300"
+                      ? "border-violet-600 bg-violet-50"
+                      : "border-gray-200 hover:border-violet-300"
                   }`}
                 >
                   <input
@@ -99,7 +99,7 @@ export default function PaymentRequestModal({
                     value={m.value}
                     checked={method === m.value}
                     onChange={() => setMethod(m.value)}
-                    className="text-blue-600"
+                    className="text-violet-600"
                   />
                   <div>
                     <p className="text-sm font-medium text-gray-900">{m.label}</p>
@@ -119,7 +119,7 @@ export default function PaymentRequestModal({
               onChange={(e) => setNote(e.target.value)}
               rows={2}
               placeholder="Any special instructions or notes..."
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
             />
           </div>
 
@@ -141,7 +141,7 @@ export default function PaymentRequestModal({
           <button
             onClick={handleSubmit}
             disabled={loading || !method}
-            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? "Submitting…" : "Request Details"}
           </button>

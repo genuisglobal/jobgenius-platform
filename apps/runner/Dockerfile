@@ -6,6 +6,8 @@ COPY package.json package-lock.json* ./
 RUN npm install
 RUN npx playwright install --with-deps chromium
 
-COPY src ./src
+COPY index.js worker.js ./
+COPY adapters ./adapters
+COPY utils ./utils
 
 CMD ["npm", "start"]

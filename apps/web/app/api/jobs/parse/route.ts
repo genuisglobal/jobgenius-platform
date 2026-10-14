@@ -1,5 +1,5 @@
 import { supabaseServer } from "@/lib/supabase/server";
-import { parseJobPost } from "@/lib/matching";
+import { parseJobPostSmart } from "@/lib/matching";
 import { getAccountManagerFromRequest } from "@/lib/am-access";
 import { requireOpsAuth } from "@/lib/ops-auth";
 
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
     }
 
     try {
-      const parsed = parseJobPost(
+      const parsed = await parseJobPostSmart(
         job.title,
         job.company,
         job.location,
@@ -119,6 +119,9 @@ export async function POST(request: Request) {
           company_size: parsed.company_size,
           offers_visa_sponsorship: parsed.offers_visa_sponsorship,
           employment_type: parsed.employment_type,
+          parse_source: parsed.parse_source,
+          responsibilities: parsed.responsibilities,
+          screening_questions: parsed.screening_questions,
           parsed_at: new Date().toISOString(),
         })
         .eq("id", job.id);

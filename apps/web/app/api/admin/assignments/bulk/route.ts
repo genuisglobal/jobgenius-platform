@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, supabaseAdmin } from "@/lib/auth";
+import { logAdminAction } from "@/lib/audit";
 
 /**
  * POST /api/admin/assignments/bulk
@@ -22,7 +23,23 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!account_manager_id) {
+    if (job_seeker_ids.length > 100) {
+      return NextResponse.json(
+        { error: "Maximum 100 assignments per request." },
+        { status: 400 }
+      );
+    }
+
+    // Deduplicate IDs
+    const uniqueIds = Array.from(new Set(job_seeker_ids.filter((id: unknown) => typeof id === "string" && id.length > 0)));
+    if (uniqueIds.length === 0) {
+      return NextResponse.json(
+        { error: "No valid job_seeker_ids provided." },
+        { status: 400 }
+      );
+    }
+
+    if (!account_manager_id || typeof account_manager_id !== "string") {
       return NextResponse.json(
         { error: "account_manager_id is required." },
         { status: 400 }
@@ -44,13 +61,20 @@ export async function POST(request: Request) {
     }
 
     // Delete existing assignments for these job seekers
-    await supabaseAdmin
+    const { error: deleteError } = await supabaseAdmin
       .from("job_seeker_assignments")
       .delete()
-      .in("job_seeker_id", job_seeker_ids);
+      .in("job_seeker_id", uniqueIds);
+
+    if (deleteError) {
+      return NextResponse.json(
+        { error: "Failed to remove existing assignments." },
+        { status: 500 }
+      );
+    }
 
     // Create new assignments
-    const assignments = job_seeker_ids.map((job_seeker_id: string) => ({
+    const assignments = uniqueIds.map((job_seeker_id: string) => ({
       job_seeker_id,
       account_manager_id,
     }));
@@ -66,6 +90,14 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+
+    logAdminAction({
+      adminId: auth.user.id,
+      adminEmail: auth.user.email,
+      action: "assignment.bulk",
+      targetType: "job_seeker",
+      details: { account_manager_id, seeker_count: uniqueIds.length },
+    }).catch((e) => console.error("Audit log failed", e));
 
     return NextResponse.json({
       count: data?.length || 0,

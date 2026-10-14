@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAM, supabaseAdmin } from "@/lib/auth";
+import { SUCCESSFUL_APPLICATION_STATUSES } from "@/lib/application-stats";
 
 // GET /api/am/performance
 // Returns performance stats for the authenticated AM
@@ -37,10 +38,10 @@ export async function GET(req: NextRequest) {
     supabaseAdmin.from("interviews").select("id", { count: "exact", head: true }).eq("account_manager_id", amId).gte("scheduled_at", monthStart),
     supabaseAdmin.from("interviews").select("id", { count: "exact", head: true }).eq("account_manager_id", amId),
     seekerIds.length > 0
-      ? supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).gte("applied_at", monthStart).in("job_seeker_id", seekerIds)
+      ? supabaseAdmin.from("application_runs").select("id", { count: "exact", head: true }).in("status", SUCCESSFUL_APPLICATION_STATUSES).gte("applied_at", monthStart).in("job_seeker_id", seekerIds)
       : Promise.resolve({ count: 0, data: null, error: null }),
     seekerIds.length > 0
-      ? supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).in("job_seeker_id", seekerIds)
+      ? supabaseAdmin.from("application_runs").select("id", { count: "exact", head: true }).in("status", SUCCESSFUL_APPLICATION_STATUSES).in("job_seeker_id", seekerIds)
       : Promise.resolve({ count: 0, data: null, error: null }),
     supabaseAdmin.from("interviews").select("job_seeker_id, scheduled_at").eq("account_manager_id", amId).order("scheduled_at", { ascending: true }).limit(200),
   ]);

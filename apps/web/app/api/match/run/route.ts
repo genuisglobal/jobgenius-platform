@@ -3,11 +3,20 @@ import { getAccountManagerFromRequest, hasJobSeekerAccess } from "@/lib/am-acces
 import { requireOpsAuth } from "@/lib/ops-auth";
 import {
   computeMatchScore,
-  parseJobPost,
+  parseJobPostSmart,
   type JobSeekerProfile,
   type JobPost,
 } from "@/lib/matching";
 import { buildMatchExplanation } from "@/lib/matching/explanations";
+import { isActiveClient } from "@/lib/intake";
+import { logActivity } from "@/lib/feedback-loop";
+import {
+  recordMatchFeatures,
+  featuresFromBreakdown,
+  blendScore,
+  readBlendAlpha,
+  getActiveModel,
+} from "@/lib/learned-ranker";
 
 type MatchPayload = {
   job_seeker_id?: string;
@@ -175,6 +184,11 @@ export async function POST(request: Request) {
   let parsedCount = 0;
   const errors: string[] = [];
 
+  // Optionally blend the learned ranker into the heuristic. No-op when
+  // RANKER_BLEND_ALPHA is unset/0. Fetch the active model once for the loop.
+  const blendAlpha = readBlendAlpha();
+  const activeModel = blendAlpha > 0 ? await getActiveModel() : null;
+
   for (const post of posts) {
     try {
       // Parse job post if needed (no structured data or reparse requested)
@@ -204,7 +218,7 @@ export async function POST(request: Request) {
       const needsParsing = !post.parsed_at || payload.reparse_jobs;
 
       if (needsParsing && post.description_text) {
-        const parsed = parseJobPost(
+        const parsed = await parseJobPostSmart(
           post.title,
           post.company,
           post.location,
@@ -227,6 +241,9 @@ export async function POST(request: Request) {
             company_size: parsed.company_size,
             offers_visa_sponsorship: parsed.offers_visa_sponsorship,
             employment_type: parsed.employment_type,
+            parse_source: parsed.parse_source,
+            responsibilities: parsed.responsibilities,
+            screening_questions: parsed.screening_questions,
             parsed_at: new Date().toISOString(),
           })
           .eq("id", post.id);
@@ -259,6 +276,16 @@ export async function POST(request: Request) {
       // Compute match score
       const matchResult = computeMatchScore(seeker, jobData, weights);
 
+      const features = featuresFromBreakdown(matchResult.component_scores, weights);
+      const finalScore = activeModel
+        ? blendScore({
+            heuristic: matchResult.score,
+            features,
+            weights: activeModel.weights,
+            alpha: blendAlpha,
+          })
+        : matchResult.score;
+
       // Upsert match score
       const { error: upsertError } = await supabaseServer
         .from("job_match_scores")
@@ -266,12 +293,22 @@ export async function POST(request: Request) {
           {
             job_post_id: post.id,
             job_seeker_id: seeker.id,
-            score: matchResult.score,
+            score: finalScore,
             confidence: matchResult.confidence,
             recommendation: matchResult.recommendation,
             reasons: {
               ...matchResult.reasons,
               component_scores: matchResult.component_scores,
+              ...(activeModel
+                ? {
+                    learned: {
+                      model_id: activeModel.id,
+                      version: activeModel.version,
+                      alpha: blendAlpha,
+                      heuristic: matchResult.score,
+                    },
+                  }
+                : {}),
             },
             updated_at: new Date().toISOString(),
           },
@@ -282,6 +319,14 @@ export async function POST(request: Request) {
         errors.push(`Failed to save score for job ${post.id}: ${upsertError.message}`);
         continue;
       }
+
+      // Snapshot features for the learned ranker (non-blocking, never throws).
+      void recordMatchFeatures({
+        jobSeekerId: seeker.id,
+        jobPostId: post.id,
+        heuristicScore: matchResult.score,
+        features,
+      });
 
       matchedCount++;
     } catch (err) {
@@ -354,7 +399,7 @@ export async function POST(request: Request) {
         category: "auto_matched",
       }));
 
-    if (toQueue.length > 0) {
+    if (toQueue.length > 0 && (await isActiveClient(seeker.id))) {
       const { error: queueError } = await supabaseServer
         .from("application_queue")
         .insert(toQueue);
@@ -363,6 +408,13 @@ export async function POST(request: Request) {
         errors.push(`Auto-queue insert failed: ${queueError.message}`);
       } else {
         autoQueuedCount = toQueue.length;
+        // Log auto-queued jobs to activity feed (non-blocking)
+        logActivity(seeker.id, {
+          eventType: "jobs_auto_queued",
+          title: `${toQueue.length} job${toQueue.length > 1 ? "s" : ""} auto-queued`,
+          description: `Matched above ${threshold}% threshold and queued for application`,
+          meta: { count: toQueue.length, threshold },
+        }).catch((err) => console.error("[match:run] activity log failed:", err));
       }
     }
   }

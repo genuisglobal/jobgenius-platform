@@ -14,6 +14,7 @@ export type RefreshSummary = {
   status: 'success' | 'error';
   fetched: number;
   inserted: number;
+  deduped: number;
   errors: number;
   sourceCounts: Record<string, number>;
   errorSources: string[];
@@ -41,9 +42,10 @@ export async function runJobRefresh(triggeredBy: string): Promise<RefreshSummary
     // 2. Fetch from all providers in parallel
     const { jobs, sourceCounts, errorSources } = await fetchAllExternalJobs();
 
-    // 3. Upsert jobs per source (delete old rows for this source, insert new)
+    // 3. Upsert jobs per source (incremental: update existing, insert new, mark stale)
     let inserted = 0;
     let errors = 0;
+    let updatedCount = 0;
 
     const sources = Array.from(new Set(jobs.map((j) => j.source)));
 
@@ -51,11 +53,10 @@ export async function runJobRefresh(triggeredBy: string): Promise<RefreshSummary
       const sourceJobs = jobs.filter((j) => j.source === source);
       if (sourceJobs.length === 0) continue;
 
-      // Delete stale records for this source
-      await supabaseAdmin.from('external_jobs').delete().eq('source', source);
-
-      // Batch insert new records (chunk to avoid payload limits)
+      // Batch upsert (chunk to avoid payload limits)
       const chunkSize = 500;
+      const sourceExternalIds: string[] = [];
+
       for (let i = 0; i < sourceJobs.length; i += chunkSize) {
         const chunk = sourceJobs.slice(i, i + chunkSize);
         const rows = chunk.map((j: ExternalJob) => ({
@@ -70,11 +71,14 @@ export async function runJobRefresh(triggeredBy: string): Promise<RefreshSummary
           category: j.category,
           url: j.url,
           fetched_at: j.fetched_at,
+          is_stale: false,
         }));
+
+        sourceExternalIds.push(...chunk.map((j) => j.external_id));
 
         const { error: upsertError } = await supabaseAdmin
           .from('external_jobs')
-          .upsert(rows, { onConflict: 'source,external_id', ignoreDuplicates: true });
+          .upsert(rows, { onConflict: 'source,external_id', ignoreDuplicates: false });
 
         if (upsertError) {
           errors += chunk.length;
@@ -82,11 +86,32 @@ export async function runJobRefresh(triggeredBy: string): Promise<RefreshSummary
           inserted += chunk.length;
         }
       }
+
+      // Mark jobs from this source that weren't in this fetch as stale
+      if (sourceExternalIds.length > 0) {
+        const { count } = await supabaseAdmin
+          .from('external_jobs')
+          .update({ is_stale: true })
+          .eq('source', source)
+          .eq('is_stale', false)
+          .not('external_id', 'in', `(${sourceExternalIds.map((id) => `"${id}"`).join(',')})`)
+          .select('id');
+      }
+    }
+
+    // 4. Cross-source deduplication: mark duplicates by title+company fingerprint
+    // Keep the newest version (latest fetched_at), mark others as dupes
+    let deduped = 0;
+    try {
+      const { data: dupeData } = await supabaseAdmin.rpc('deduplicate_external_jobs');
+      deduped = typeof dupeData === 'number' ? dupeData : 0;
+    } catch {
+      // RPC may not exist yet — skip
     }
 
     const durationMs = Date.now() - startedAt;
 
-    // 4. Mark cron_run as success
+    // 5. Mark cron_run as success
     await supabaseAdmin
       .from('cron_runs')
       .update({
@@ -104,6 +129,7 @@ export async function runJobRefresh(triggeredBy: string): Promise<RefreshSummary
       status: 'success',
       fetched: jobs.length,
       inserted,
+      deduped,
       errors: errors + errorSources.length,
       sourceCounts,
       errorSources,
@@ -113,7 +139,7 @@ export async function runJobRefresh(triggeredBy: string): Promise<RefreshSummary
     const errorMessage = err instanceof Error ? err.message : String(err);
     const durationMs = Date.now() - startedAt;
 
-    // 5. Mark cron_run as error
+    // 6. Mark cron_run as error
     await supabaseAdmin
       .from('cron_runs')
       .update({
@@ -128,6 +154,7 @@ export async function runJobRefresh(triggeredBy: string): Promise<RefreshSummary
       status: 'error',
       fetched: 0,
       inserted: 0,
+      deduped: 0,
       errors: 1,
       sourceCounts: {},
       errorSources: [],

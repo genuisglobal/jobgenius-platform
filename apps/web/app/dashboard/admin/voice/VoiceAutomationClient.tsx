@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -10,6 +10,7 @@ type VoicePlaybook = {
   name: string;
   is_active: boolean;
   pathway_id: string | null;
+  retell_agent_id: string | null;
   system_prompt: string;
   assistant_goal: string | null;
   guardrails: string | null;
@@ -44,6 +45,7 @@ type PlaybookDraft = {
   name: string;
   is_active: boolean;
   pathway_id: string;
+  retell_agent_id: string;
   system_prompt: string;
   assistant_goal: string;
   guardrails: string;
@@ -73,7 +75,7 @@ type DispatchResult = {
 const AUTO_DISPATCH_TYPES = new Set<VoiceCallType>([
   "lead_qualification",
   "onboarding",
-  "interview_prep",
+  "interview_warmup",
 ]);
 
 function toCallTypeLabel(callType: string) {
@@ -88,6 +90,7 @@ function toPlaybookDraft(playbook: VoicePlaybook): PlaybookDraft {
     name: playbook.name ?? "Default",
     is_active: Boolean(playbook.is_active),
     pathway_id: playbook.pathway_id ?? "",
+    retell_agent_id: playbook.retell_agent_id ?? "",
     system_prompt: playbook.system_prompt ?? "",
     assistant_goal: playbook.assistant_goal ?? "",
     guardrails: playbook.guardrails ?? "",
@@ -265,6 +268,7 @@ export default function VoiceAutomationClient({
           name: "Default",
           is_active: true,
           pathway_id: "",
+          retell_agent_id: "",
           system_prompt: "",
           assistant_goal: "",
           guardrails: "",
@@ -321,6 +325,7 @@ export default function VoiceAutomationClient({
           name: draft.name,
           is_active: draft.is_active,
           pathway_id: draft.pathway_id || null,
+          retell_agent_id: draft.retell_agent_id || null,
           system_prompt: draft.system_prompt,
           assistant_goal: draft.assistant_goal || null,
           guardrails: draft.guardrails || null,
@@ -515,7 +520,7 @@ export default function VoiceAutomationClient({
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Voice Automation</h1>
           <p className="text-sm text-gray-600 mt-1">
-            Manage Bland voice playbooks, import lead sheets, and dispatch automation runs.
+            Manage Retell voice playbooks, import lead sheets, and dispatch automation runs.
           </p>
         </div>
         <a
@@ -611,15 +616,15 @@ export default function VoiceAutomationClient({
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">
-                        Bland Pathway ID
+                        Retell Agent ID
                       </label>
                       <input
-                        value={draft.pathway_id}
+                        value={draft.retell_agent_id}
                         onChange={(event) =>
-                          updateDraft(playbook.id, { pathway_id: event.target.value })
+                          updateDraft(playbook.id, { retell_agent_id: event.target.value })
                         }
                         className="w-full px-3 py-2 border rounded-lg text-sm"
-                        placeholder="optional"
+                        placeholder="agent_xxxxxxxx"
                       />
                     </div>
                   </div>
@@ -724,7 +729,7 @@ export default function VoiceAutomationClient({
                     <button
                       onClick={() => savePlaybook(playbook.id)}
                       disabled={savingPlaybookId === playbook.id}
-                      className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                      className="px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
                     >
                       {savingPlaybookId === playbook.id ? "Saving..." : "Save Playbook"}
                     </button>

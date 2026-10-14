@@ -1,5 +1,10 @@
 import { hasCaptcha, hasEmailOtp, hasSmsOtp } from "./signals.js";
-import { extractRequiredFields, uploadResume } from "./adapters/base.js";
+import {
+  extractRequiredFields,
+  uploadResume,
+  fillComboboxByValue,
+  findComboboxByLabel,
+} from "./adapters/base.js";
 import { logLine } from "./logger.js";
 import {
   sendEvent,
@@ -8,6 +13,10 @@ import {
   retryRun,
   fetchVerificationCode,
 } from "./api.js";
+import { solveCaptcha, isCaptchaServiceConfigured } from "./captcha.js";
+import { captureFailureScreenshot } from "./screenshots.js";
+import { classifyFields } from "./field-classifier.js";
+import { waitForDomStable, dismissOverlays, uploadViaDragDrop } from "./dom-stability.js";
 
 function toBoundedInt(value, fallback, min = 1, max = 20) {
   const parsed = Number(value);
@@ -239,6 +248,16 @@ async function runAutoAdvance({
     }
 
     if (await hasCaptcha(page)) {
+      if (isCaptchaServiceConfigured()) {
+        const solveResult = await solveCaptcha(page);
+        if (solveResult.solved) {
+          await page.waitForTimeout(2000);
+          // Re-check if captcha is gone
+          if (!(await hasCaptcha(page))) {
+            continue; // CAPTCHA solved, continue auto-advance loop
+          }
+        }
+      }
       return {
         status: "NEEDS_ATTENTION",
         reason: "CAPTCHA",
@@ -269,9 +288,35 @@ async function runAutoAdvance({
       };
     }
 
-    const missingFields = adapter.extractRequiredFields
+    let missingFields = adapter.extractRequiredFields
       ? await adapter.extractRequiredFields(page)
       : await extractRequiredFields(page);
+
+    if (missingFields.length > 0) {
+      // Resolve via learned-rule cache → screening answers → LLM, and learn
+      // from any LLM result so the next application is a cache hit.
+      let urlHost = "";
+      try {
+        urlHost = new URL(page.url()).hostname.toLowerCase();
+      } catch {
+        urlHost = "";
+      }
+      const classifiedValues = await classifyFields(
+        missingFields,
+        ctx.profile,
+        ctx.screeningAnswers ?? [],
+        ctx.job ?? null,
+        { apiBaseUrl, authToken, claimToken, runnerId, atsType: ctx.atsType, urlHost }
+      );
+      if (Object.keys(classifiedValues).length > 0) {
+        await fillClassifiedFields(page, classifiedValues);
+        await page.waitForTimeout(500);
+        // Re-check
+        missingFields = adapter.extractRequiredFields
+          ? await adapter.extractRequiredFields(page)
+          : await extractRequiredFields(page);
+      }
+    }
 
     if (missingFields.length > 0) {
       return {
@@ -307,6 +352,8 @@ async function runAutoAdvance({
     }
 
     await page.waitForTimeout(1300);
+    await waitForDomStable(page);
+    await dismissOverlays(page);
     const afterFingerprint = await capturePageFingerprint(page);
     const progressed = beforeFingerprint !== afterFingerprint;
 
@@ -353,6 +400,79 @@ async function runAutoAdvance({
   return { status: "REVIEW_REQUIRED" };
 }
 
+async function fillClassifiedFields(page, classifiedValues) {
+  for (const [label, value] of Object.entries(classifiedValues)) {
+    if (!value) continue;
+    try {
+      // Find input by label text
+      const input = await page.evaluateHandle(
+        ({ label }) => {
+          const labels = Array.from(document.querySelectorAll("label"));
+          for (const lbl of labels) {
+            if (lbl.textContent?.trim().toLowerCase().includes(label.toLowerCase())) {
+              const forId = lbl.getAttribute("for");
+              if (forId) {
+                const target = document.getElementById(forId);
+                if (target) return target;
+              }
+              const input = lbl.querySelector("input, textarea, select");
+              if (input) return input;
+            }
+          }
+          // Fallback: aria-label match
+          const all = document.querySelectorAll("input, textarea, select");
+          for (const el of all) {
+            const aria = el.getAttribute("aria-label") ?? "";
+            const name = el.getAttribute("name") ?? "";
+            const placeholder = el.getAttribute("placeholder") ?? "";
+            const hint = [aria, name, placeholder].join(" ").toLowerCase();
+            if (hint.includes(label.toLowerCase())) return el;
+          }
+          return null;
+        },
+        { label }
+      );
+
+      const element = input.asElement();
+      if (!element) {
+        // No native input/select matched — the field may be an ARIA
+        // combobox/listbox widget (Workday, Ashby, react-select), which must
+        // be driven open→option-click rather than value-set.
+        const combo = await findComboboxByLabel(page, label);
+        if (combo) await fillComboboxByValue(page, combo, value);
+        continue;
+      }
+
+      const isComboInput = await element
+        .evaluate((el) => {
+          const role = (el.getAttribute("role") || "").toLowerCase();
+          return (
+            role === "combobox" ||
+            Boolean(el.getAttribute("aria-autocomplete")) ||
+            (el.getAttribute("aria-haspopup") || "").toLowerCase() === "listbox" ||
+            Boolean(el.closest("[role='combobox']"))
+          );
+        })
+        .catch(() => false);
+      if (isComboInput) {
+        // fill() alone LOOKS filled but never commits to the widget's state.
+        if (await fillComboboxByValue(page, element, value)) continue;
+      }
+
+      const tagName = await element.evaluate((el) => el.tagName.toLowerCase());
+      if (tagName === "select") {
+        await element.selectOption({ label: value }).catch(() =>
+          element.selectOption({ value }).catch(() => null)
+        );
+      } else {
+        await element.fill(value);
+      }
+    } catch {
+      // Best-effort fill
+    }
+  }
+}
+
 export async function runPlan({
   apiBaseUrl,
   authToken,
@@ -369,6 +489,9 @@ export async function runPlan({
   onProgress,
   resumePath,
   profile,
+  screeningAnswers,
+  job,
+  atsAccount,
 }) {
   void context;
 
@@ -383,6 +506,22 @@ export async function runPlan({
     dryRun,
     resumePath: resumePath ?? null,
     profile: profile ?? null,
+    screeningAnswers: screeningAnswers ?? [],
+    job: job ?? run.job ?? null,
+    // Per-tenant ATS credentials (Workday): { email, password, created,
+    // markFailed() }. Fetched by the worker from /api/apply/ats-account.
+    atsAccount: atsAccount ?? null,
+    // Bound snapshot helper so adapters can capture per-wizard-page evidence
+    // (Workday's multi-step flow) without holding API credentials themselves.
+    captureSnapshot: (step, reason) =>
+      captureFailureScreenshot(page, {
+        runId: run.run_id,
+        step: step ?? "SNAPSHOT",
+        reason: reason ?? "STEP_SNAPSHOT",
+        apiBaseUrl,
+        authToken,
+        runnerId,
+      }).catch(() => null),
     automation: {
       maxAutoAdvanceSteps: toBoundedInt(
         automation.max_auto_advance_steps,
@@ -468,28 +607,44 @@ export async function runPlan({
     return;
   }
 
+  // Dismiss any overlays (cookie banners, modals) before starting
+  await dismissOverlays(page);
+  await waitForDomStable(page);
+
   if (await hasCaptcha(page)) {
-    await pauseRun(
-      apiBaseUrl,
-      {
-        run_id: ctx.runId,
+    let captchaSolved = false;
+    if (isCaptchaServiceConfigured()) {
+      const solveResult = await solveCaptcha(page);
+      captchaSolved = solveResult.solved;
+      if (captchaSolved) await page.waitForTimeout(2000);
+    }
+    if (!captchaSolved || (await hasCaptcha(page))) {
+      await captureFailureScreenshot(page, {
+        runId: ctx.runId, step: "DETECT_ATS", reason: "CAPTCHA",
+        apiBaseUrl, authToken, runnerId,
+      });
+      await pauseRun(
+        apiBaseUrl,
+        {
+          run_id: ctx.runId,
+          reason: "CAPTCHA",
+          message: "Captcha detected.",
+          last_seen_url: page.url(),
+          step: "DETECT_ATS",
+        },
+        authToken,
+        claimToken,
+        runnerId
+      );
+      onProgress?.({
+        type: "PAUSED",
         reason: "CAPTCHA",
-        message: "Captcha detected.",
-        last_seen_url: page.url(),
+        runId: ctx.runId,
+        atsType: ctx.atsType,
         step: "DETECT_ATS",
-      },
-      authToken,
-      claimToken,
-      runnerId
-    );
-    onProgress?.({
-      type: "PAUSED",
-      reason: "CAPTCHA",
-      runId: ctx.runId,
-      atsType: ctx.atsType,
-      step: "DETECT_ATS",
-    });
-    return;
+      });
+      return;
+    }
   }
 
   const otpReady = await ensureOtpReady({
@@ -529,6 +684,8 @@ export async function runPlan({
     });
 
     if (step.name === "OPEN_URL") {
+      await waitForDomStable(page);
+      await dismissOverlays(page);
       continue;
     }
 
@@ -581,6 +738,10 @@ export async function runPlan({
     if (step.name === "TRY_APPLY_ENTRY") {
       const result = await activeAdapter.clickApplyEntry(page, ctx);
       if (result?.ok === false) {
+        await captureFailureScreenshot(page, {
+          runId: ctx.runId, step: step.name, reason: result.reason ?? "APPLY_BUTTON_MISSING",
+          apiBaseUrl, authToken, runnerId,
+        });
         await pauseRun(
           apiBaseUrl,
           {
@@ -655,12 +816,17 @@ export async function runPlan({
         return;
       }
       if (ctx.resumePath) {
-        const uploadResult = activeAdapter.uploadResume
+        let uploadResult = activeAdapter.uploadResume
           ? await activeAdapter.uploadResume(page, ctx)
           : await uploadResume(page, ctx.resumePath);
+        // Fallback to drag-and-drop upload if standard file input not found
+        if (uploadResult?.ok === false && uploadResult.reason === "NO_INPUT_OR_URL") {
+          uploadResult = await uploadViaDragDrop(page, ctx.resumePath);
+        }
         if (
           uploadResult?.ok === false &&
-          uploadResult.reason !== "NO_INPUT_OR_URL"
+          uploadResult.reason !== "NO_INPUT_OR_URL" &&
+          uploadResult.reason !== "NO_UPLOAD_ELEMENT"
         ) {
           logLine({
             level: "WARN",
@@ -674,10 +840,30 @@ export async function runPlan({
     }
 
     if (step.name === "CHECK_REQUIRED") {
-      const missingFields = activeAdapter.extractRequiredFields
+      let missingFields = activeAdapter.extractRequiredFields
         ? await activeAdapter.extractRequiredFields(page)
         : await extractRequiredFields(page);
+      // Try LLM classifier + screening answers before pausing
       if (missingFields.length > 0) {
+        const classifiedValues = await classifyFields(
+          missingFields,
+          ctx.profile,
+          ctx.screeningAnswers ?? [],
+          ctx.job ?? null
+        );
+        if (Object.keys(classifiedValues).length > 0) {
+          await fillClassifiedFields(page, classifiedValues);
+          await page.waitForTimeout(500);
+          missingFields = activeAdapter.extractRequiredFields
+            ? await activeAdapter.extractRequiredFields(page)
+            : await extractRequiredFields(page);
+        }
+      }
+      if (missingFields.length > 0) {
+        await captureFailureScreenshot(page, {
+          runId: ctx.runId, step: step.name, reason: "REQUIRED_FIELDS",
+          apiBaseUrl, authToken, runnerId,
+        });
         await pauseRun(
           apiBaseUrl,
           {
@@ -735,6 +921,10 @@ export async function runPlan({
       }
       const result = await activeAdapter.submit(page, ctx);
       if (result?.ok === false) {
+        await captureFailureScreenshot(page, {
+          runId: ctx.runId, step: step.name, reason: result.reason ?? "SUBMIT_BUTTON_MISSING",
+          apiBaseUrl, authToken, runnerId,
+        });
         await pauseRun(
           apiBaseUrl,
           {
@@ -800,6 +990,10 @@ export async function runPlan({
       }
 
       if (advanceResult.status === "NEEDS_ATTENTION") {
+        await captureFailureScreenshot(page, {
+          runId: ctx.runId, step: step.name, reason: advanceResult.reason ?? "REQUIRES_REVIEW",
+          apiBaseUrl, authToken, runnerId,
+        });
         await pauseRun(
           apiBaseUrl,
           {
@@ -857,6 +1051,10 @@ export async function runPlan({
         return;
       }
 
+      await captureFailureScreenshot(page, {
+        runId: ctx.runId, step: step.name, reason: "REQUIRES_REVIEW",
+        apiBaseUrl, authToken, runnerId,
+      });
       await pauseRun(
         apiBaseUrl,
         {

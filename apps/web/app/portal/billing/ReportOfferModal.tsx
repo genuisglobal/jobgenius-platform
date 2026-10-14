@@ -12,6 +12,7 @@ export default function ReportOfferModal({ onClose, onSuccess }: ReportOfferModa
     company: "",
     role: "",
     baseSalary: "",
+    guaranteedCompensation: "",
     offerAcceptedAt: "",
     startDate: "",
     notes: "",
@@ -43,6 +44,9 @@ export default function ReportOfferModal({ onClose, onSuccess }: ReportOfferModa
           company: form.company,
           role: form.role,
           baseSalary: salary,
+          guaranteedCompensation: form.guaranteedCompensation
+            ? parseFloat(form.guaranteedCompensation.replace(/,/g, "")) || 0
+            : 0,
           offerAcceptedAt: form.offerAcceptedAt,
           startDate: form.startDate || undefined,
           notes: form.notes || undefined,
@@ -74,7 +78,7 @@ export default function ReportOfferModal({ onClose, onSuccess }: ReportOfferModa
         </div>
 
         <div className="p-5 space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+          <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 text-sm text-violet-800">
             Congratulations! Please report your offer accurately. Your Account Manager will confirm it, and the 60-day commission window starts once both parties confirm.
           </div>
 
@@ -86,7 +90,7 @@ export default function ReportOfferModal({ onClose, onSuccess }: ReportOfferModa
                 value={form.company}
                 onChange={(e) => handleChange("company", e.target.value)}
                 placeholder="Acme Corp"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               />
             </div>
             <div>
@@ -96,7 +100,7 @@ export default function ReportOfferModal({ onClose, onSuccess }: ReportOfferModa
                 value={form.role}
                 onChange={(e) => handleChange("role", e.target.value)}
                 placeholder="Software Engineer"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               />
             </div>
           </div>
@@ -111,12 +115,32 @@ export default function ReportOfferModal({ onClose, onSuccess }: ReportOfferModa
                 onChange={(e) => handleChange("baseSalary", e.target.value)}
                 placeholder="120,000"
                 min="1"
-                className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Guaranteed Compensation (signing/guaranteed bonus, USD)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+              <input
+                type="number"
+                value={form.guaranteedCompensation}
+                onChange={(e) => handleChange("guaranteedCompensation", e.target.value)}
+                placeholder="0"
+                min="0"
+                className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               />
             </div>
             {form.baseSalary && parseFloat(form.baseSalary) > 0 && (
               <p className="text-xs text-gray-500 mt-1">
-                5% commission: ${(parseFloat(form.baseSalary) * 0.05).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                Placement fee (5% of base + guaranteed): $
+                {(
+                  (parseFloat(form.baseSalary.replace(/,/g, "") || "0") +
+                    parseFloat(form.guaranteedCompensation.replace(/,/g, "") || "0")) *
+                  0.05
+                ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
             )}
           </div>
@@ -128,7 +152,7 @@ export default function ReportOfferModal({ onClose, onSuccess }: ReportOfferModa
                 type="date"
                 value={form.offerAcceptedAt}
                 onChange={(e) => handleChange("offerAcceptedAt", e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               />
             </div>
             <div>
@@ -137,7 +161,7 @@ export default function ReportOfferModal({ onClose, onSuccess }: ReportOfferModa
                 type="date"
                 value={form.startDate}
                 onChange={(e) => handleChange("startDate", e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               />
             </div>
           </div>
@@ -149,7 +173,7 @@ export default function ReportOfferModal({ onClose, onSuccess }: ReportOfferModa
               onChange={(e) => handleChange("notes", e.target.value)}
               rows={2}
               placeholder="Any additional details about the offer..."
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
             />
           </div>
 

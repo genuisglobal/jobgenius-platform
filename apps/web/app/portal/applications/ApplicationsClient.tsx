@@ -43,10 +43,10 @@ interface AppRun {
 
 const STATUS_COLORS: Record<string, string> = {
   QUEUED: "bg-yellow-100 text-yellow-800",
-  IN_PROGRESS: "bg-blue-100 text-blue-800",
-  RUNNING: "bg-blue-100 text-blue-800",
-  READY: "bg-blue-100 text-blue-800",
-  RETRYING: "bg-blue-100 text-blue-800",
+  IN_PROGRESS: "bg-violet-100 text-violet-800",
+  RUNNING: "bg-violet-100 text-violet-800",
+  READY: "bg-violet-100 text-violet-800",
+  RETRYING: "bg-violet-100 text-violet-800",
   APPLIED: "bg-green-100 text-green-800",
   COMPLETED: "bg-green-100 text-green-800",
   FAILED: "bg-red-100 text-red-800",
@@ -177,7 +177,7 @@ export default function ApplicationsClient({
           <div className="text-xs text-gray-500 mt-1">Queued</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 text-center">
-          <div className="text-2xl font-bold text-blue-600">{stats.inProgress}</div>
+          <div className="text-2xl font-bold text-violet-600">{stats.inProgress}</div>
           <div className="text-xs text-gray-500 mt-1">In Progress</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 text-center">
@@ -198,12 +198,12 @@ export default function ApplicationsClient({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by company, role, or location..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent"
           />
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent"
           >
             <option value="all">All Statuses</option>
             {statuses.map((s) => (
@@ -304,7 +304,7 @@ export default function ApplicationsClient({
                         href={app.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1"
+                        className="inline-flex items-center gap-1 text-xs text-violet-600 hover:underline mt-1"
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />

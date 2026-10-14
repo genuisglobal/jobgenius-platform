@@ -69,13 +69,23 @@ export async function PATCH(
 
     const { data: source } = await supabaseAdmin
       .from("job_sources")
-      .select("name")
+      .select("name, source_type")
       .eq("name", sourceName)
       .maybeSingle();
 
     if (!source) {
       return Response.json(
         { success: false, error: `Unknown source: ${sourceName}` },
+        { status: 400 }
+      );
+    }
+
+    if (source.source_type === "feed") {
+      return Response.json(
+        {
+          success: false,
+          error: `Policy generation does not support company-specific ATS feed sources like ${sourceName}.`,
+        },
         { status: 400 }
       );
     }

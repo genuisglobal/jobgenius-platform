@@ -65,19 +65,27 @@ export async function POST(request: Request) {
   }
 
   // Update match status to 'contacted'
-  await supabaseAdmin
+  const { error: matchUpdateError } = await supabaseAdmin
     .from("network_contact_matches")
     .update({ status: "contacted" })
     .eq("id", body.match_id);
 
+  if (matchUpdateError) {
+    console.error("[am:network] failed to update match status:", matchUpdateError);
+  }
+
   // Update last_contacted_at on the contact
-  await supabaseAdmin
+  const { error: contactUpdateError } = await supabaseAdmin
     .from("network_contacts")
     .update({ last_contacted_at: new Date().toISOString() })
     .eq("id", match.network_contact_id);
 
+  if (contactUpdateError) {
+    console.error("[am:network] failed to update contact last_contacted_at:", contactUpdateError);
+  }
+
   // Log activity
-  await supabaseAdmin.from("network_contact_activity").insert({
+  const { error: activityError } = await supabaseAdmin.from("network_contact_activity").insert({
     network_contact_id: match.network_contact_id,
     activity_type: "email_sent",
     details: {
@@ -87,6 +95,10 @@ export async function POST(request: Request) {
       email_log_id: result.email_log_id,
     },
   });
+
+  if (activityError) {
+    console.error("[am:network] failed to log activity:", activityError);
+  }
 
   return NextResponse.json({ success: true, email_log_id: result.email_log_id });
 }

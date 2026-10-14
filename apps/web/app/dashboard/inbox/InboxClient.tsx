@@ -100,7 +100,7 @@ export default function InboxClient({
             return added.length > 0 ? [...prev, ...added] : prev;
           });
         })
-        .catch(() => {});
+        .catch((err) => console.error("[inbox] poll messages failed:", err));
     }, 15000);
     return () => clearInterval(interval);
   }, [selectedId, selected]);
@@ -156,7 +156,7 @@ export default function InboxClient({
                 key={conv.id}
                 onClick={() => setSelectedId(conv.id)}
                 className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
-                  selectedId === conv.id ? "bg-blue-50 border-l-2 border-l-blue-500" : ""
+                  selectedId === conv.id ? "bg-violet-50 border-l-2 border-l-violet-500" : ""
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -207,12 +207,12 @@ export default function InboxClient({
               <div>
                 <p className="font-semibold text-gray-900">{selected.subject}</p>
                 <p className="text-sm text-gray-500">
-                  with <a href={`/dashboard/seekers/${selected.seeker_id}?tab=messages`} className="text-blue-600 hover:underline">{selected.seeker_name}</a>
+                  with <a href={`/dashboard/seekers/${selected.seeker_id}?tab=messages`} className="text-violet-600 hover:underline">{selected.seeker_name}</a>
                 </p>
               </div>
               <a
                 href={`/dashboard/seekers/${selected.seeker_id}?tab=messages&conversation=${selected.id}`}
-                className="text-xs text-blue-600 hover:text-blue-700 border border-blue-200 px-2 py-1 rounded"
+                className="text-xs text-violet-600 hover:text-violet-700 border border-violet-200 px-2 py-1 rounded"
               >
                 Open in seeker →
               </a>
@@ -231,7 +231,7 @@ export default function InboxClient({
                     <div key={msg.id} className={`flex ${isAM ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 ${
                         isAM
-                          ? "bg-blue-600 text-white"
+                          ? "bg-violet-600 text-white"
                           : "bg-gray-100 text-gray-900"
                       }`}>
                         {msg.message_type === "task" && (
@@ -240,7 +240,7 @@ export default function InboxClient({
                           </p>
                         )}
                         <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                        <p className={`text-xs mt-1 ${isAM ? "text-blue-200" : "text-gray-400"}`}>
+                        <p className={`text-xs mt-1 ${isAM ? "text-violet-200" : "text-gray-400"}`}>
                           {new Date(msg.created_at).toLocaleString("en-US", {
                             month: "short",
                             day: "numeric",
@@ -266,12 +266,12 @@ export default function InboxClient({
                   }}
                   rows={2}
                   placeholder="Type a reply… (Ctrl+Enter to send)"
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
                 />
                 <button
                   onClick={sendReply}
                   disabled={!reply.trim() || sending}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg self-end"
+                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg self-end"
                 >
                   {sending ? "…" : "Send"}
                 </button>

@@ -1,17 +1,19 @@
 {
   "name": "@jobgenius/runner",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch src/index.js",
-    "start": "node src/index.js",
-    "discover": "node src/discovery-cli.js",
-    "discover:linkedin": "node src/discovery-cli.js linkedin",
-    "discover:indeed": "node src/discovery-cli.js indeed",
-    "discover:glassdoor": "node src/discovery-cli.js glassdoor"
+    "start": "node index.js",
+    "start:engine": "node src/index.js",
+    "test:workday": "node tests/workday-fixture.mjs",
+    "dev": "node --watch index.js",
+    "check:auth": "node check-auth.js",
+    "prepare:greenhouse": "node prepare-greenhouse-verification.js"
   },
   "dependencies": {
-    "playwright": "^1.41.2"
+    "axios": "^1.8.4",
+    "dotenv": "^16.4.7",
+    "playwright": "^1.52.0"
   }
 }

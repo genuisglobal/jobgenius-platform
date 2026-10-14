@@ -2,8 +2,6 @@
  * API client for job discovery operations
  */
 
-import { logLine } from '../logger.js';
-
 const API_BASE_URL = process.env.JOBGENIUS_API_BASE_URL || 'http://localhost:3000';
 const RUNNER_AUTH_TOKEN = process.env.RUNNER_AUTH_TOKEN || '';
 const OPS_API_KEY = process.env.OPS_API_KEY || '';
@@ -94,7 +92,8 @@ export async function completeDiscoveryRun(runId, result) {
       jobs_new: result.jobs_new,
       jobs_updated: result.jobs_updated,
       pages_scraped: result.pages_scraped,
-      error_message: result.error_message
+      error_message: result.error_message,
+      metadata: result.metadata
     })
   });
 }
@@ -103,7 +102,7 @@ export async function completeDiscoveryRun(runId, result) {
  * Save discovered jobs to the database
  * @param {string} runId
  * @param {import('./types.js').DiscoveredJob[]} jobs
- * @returns {Promise<{saved: number, duplicates: number, errors: number}>}
+ * @returns {Promise<{saved: number, updated: number, unchanged: number, duplicates: number, errors: number}>}
  */
 export async function saveDiscoveredJobs(runId, jobs) {
   const result = await apiRequest('/api/discovery/jobs/save', {

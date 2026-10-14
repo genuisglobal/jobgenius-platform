@@ -260,7 +260,7 @@ export default async function InterviewPrepListPage() {
                 )}
 
                 <div className="flex gap-2 mt-3">
-                  <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs">
+                  <span className="px-2 py-1 bg-violet-50 text-violet-700 rounded text-xs">
                     Study Notes
                   </span>
                   <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs">

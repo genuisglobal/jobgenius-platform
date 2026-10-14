@@ -1,17 +1,34 @@
 "use client";
 
 import { useState } from "react";
+import { isUpcomingInterview } from "@/lib/portal/interview-bucketing";
+
+interface JobPost {
+  id: string;
+  title: string | null;
+  company: string | null;
+}
 
 interface Interview {
   id: string;
   job_post_id?: string | null;
-  company_name: string;
-  role_title: string;
+  job_posts?: JobPost | JobPost[] | null;
   interview_type?: string;
-  scheduled_at: string;
+  // Null until a time is actually booked (e.g. the AM has a scheduling link
+  // but hasn't confirmed a slot yet) — a real interviews.scheduled_at state,
+  // not an edge case.
+  scheduled_at: string | null;
   status: string;
-  join_url?: string;
-  notes?: string;
+  meeting_link?: string | null;
+  phone_number?: string | null;
+  address?: string | null;
+  notes_for_candidate?: string | null;
+}
+
+function getJobPost(jp: JobPost | JobPost[] | null | undefined): JobPost | null {
+  if (!jp) return null;
+  if (Array.isArray(jp)) return jp[0] || null;
+  return jp;
 }
 
 interface PrepItem {
@@ -32,13 +49,10 @@ export default function InterviewsClient({
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const now = new Date();
-  const upcoming = initialInterviews.filter(
-    (i) => new Date(i.scheduled_at) >= now && i.status === "SCHEDULED"
+  const upcoming = initialInterviews.filter((i) =>
+    isUpcomingInterview(i.status, i.scheduled_at)
   );
-  const past = initialInterviews.filter(
-    (i) => new Date(i.scheduled_at) < now || i.status !== "SCHEDULED"
-  );
+  const past = initialInterviews.filter((i) => !upcoming.includes(i));
 
   const prepByInterview = (initialPrep as unknown as PrepItem[]).reduce(
     (acc, p) => {
@@ -52,7 +66,8 @@ export default function InterviewsClient({
   const InterviewCard = ({ interview }: { interview: Interview }) => {
     const isExpanded = expandedId === interview.id;
     const prep = prepByInterview[interview.id] || [];
-    const dateObj = new Date(interview.scheduled_at);
+    const jobPost = getJobPost(interview.job_posts);
+    const dateObj = interview.scheduled_at ? new Date(interview.scheduled_at) : null;
     const resume = interview.job_post_id
       ? resumeByJobPostId[interview.job_post_id]
       : null;
@@ -65,8 +80,10 @@ export default function InterviewsClient({
         >
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="font-semibold text-gray-900">{interview.company_name}</h3>
-              <p className="text-sm text-gray-600">{interview.role_title}</p>
+              <h3 className="font-semibold text-gray-900">
+                {jobPost?.company || "Company pending"}
+              </h3>
+              <p className="text-sm text-gray-600">{jobPost?.title || "Role pending"}</p>
               {interview.interview_type && (
                 <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800 capitalize">
                   {interview.interview_type}
@@ -74,26 +91,42 @@ export default function InterviewsClient({
               )}
             </div>
             <div className="text-right">
-              <p className="text-sm font-medium text-gray-900">
-                {dateObj.toLocaleDateString()}
-              </p>
-              <p className="text-sm text-gray-600">
-                {dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-              </p>
+              {dateObj ? (
+                <>
+                  <p className="text-sm font-medium text-gray-900">
+                    {dateObj.toLocaleDateString()}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </>
+              ) : (
+                <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-800">
+                  Awaiting scheduled time
+                </span>
+              )}
             </div>
           </div>
 
           <div className="mt-3 flex items-center gap-3">
-            {interview.join_url && (
+            {interview.meeting_link && (
               <a
-                href={interview.join_url}
+                href={interview.meeting_link}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="text-sm text-blue-600 hover:text-blue-800"
+                className="text-sm text-violet-600 hover:text-violet-800"
               >
                 Join Meeting
               </a>
+            )}
+            {!interview.meeting_link && interview.phone_number && (
+              <span className="text-sm text-gray-600">
+                Call: {interview.phone_number}
+              </span>
+            )}
+            {!interview.meeting_link && !interview.phone_number && interview.address && (
+              <span className="text-sm text-gray-600">{interview.address}</span>
             )}
             {resume?.url && (
               <a
@@ -126,10 +159,10 @@ export default function InterviewsClient({
 
         {isExpanded && (
           <div className="border-t px-5 py-4 space-y-4">
-            {interview.notes && (
+            {interview.notes_for_candidate && (
               <div>
                 <h4 className="text-sm font-medium text-gray-700 mb-1">Notes</h4>
-                <p className="text-sm text-gray-600">{interview.notes}</p>
+                <p className="text-sm text-gray-600">{interview.notes_for_candidate}</p>
               </div>
             )}
             {prep.length > 0 ? (

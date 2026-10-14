@@ -117,7 +117,7 @@ export default function NetworkClient({
         <h1 className="text-2xl font-bold text-gray-900">Network Hub</h1>
         <button
           onClick={() => setShowAddForm(true)}
-          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition"
+          className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 transition"
         >
           + Add Contact
         </button>
@@ -149,7 +149,7 @@ export default function NetworkClient({
           >
             {tab.label}
             {tab.id === "matches" && pendingMatchCount > 0 && (
-              <span className="ml-2 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+              <span className="ml-2 px-2 py-0.5 text-xs bg-violet-100 text-violet-700 rounded-full">
                 {pendingMatchCount}
               </span>
             )}

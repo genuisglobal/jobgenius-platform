@@ -139,14 +139,14 @@ export default function SeekersClient({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, email, location, or target title..."
-              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
             />
           </div>
           <div className="flex gap-2">
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value as typeof filter)}
-              className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
             >
               <option value="all">All Seekers</option>
               <option value="attention">Needs Attention</option>
@@ -155,7 +155,7 @@ export default function SeekersClient({
             <div className="flex border rounded-lg overflow-hidden">
               <button
                 onClick={() => setView("cards")}
-                className={`px-3 py-2 ${view === "cards" ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+                className={`px-3 py-2 ${view === "cards" ? "bg-violet-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
@@ -163,7 +163,7 @@ export default function SeekersClient({
               </button>
               <button
                 onClick={() => setView("table")}
-                className={`px-3 py-2 ${view === "table" ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+                className={`px-3 py-2 ${view === "table" ? "bg-violet-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
@@ -176,11 +176,11 @@ export default function SeekersClient({
 
       {/* Bulk Action Toolbar */}
       {selected.size > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-blue-800">{selected.size} selected</span>
+        <div className="bg-violet-50 border border-violet-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium text-violet-800">{selected.size} selected</span>
           <button
             onClick={() => setBulkAction("message")}
-            className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
+            className="px-3 py-1.5 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700"
           >
             Send Message
           </button>
@@ -220,7 +220,7 @@ export default function SeekersClient({
                     type="checkbox"
                     checked={selected.size === filtered.length && filtered.length > 0}
                     onChange={toggleSelectAll}
-                    className="accent-blue-600"
+                    className="accent-violet-600"
                   />
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Name</th>
@@ -237,13 +237,13 @@ export default function SeekersClient({
             </thead>
             <tbody className="divide-y">
               {filtered.map((seeker) => (
-                <tr key={seeker.id} className={`hover:bg-gray-50 ${selected.has(seeker.id) ? "bg-blue-50" : ""}`}>
+                <tr key={seeker.id} className={`hover:bg-gray-50 ${selected.has(seeker.id) ? "bg-violet-50" : ""}`}>
                   <td className="px-4 py-3 w-8">
                     <input
                       type="checkbox"
                       checked={selected.has(seeker.id)}
                       onChange={() => toggleSelect(seeker.id)}
-                      className="accent-blue-600"
+                      className="accent-violet-600"
                     />
                   </td>
                   <td className="px-4 py-3">
@@ -279,7 +279,7 @@ export default function SeekersClient({
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/dashboard/seekers/${seeker.id}`}
-                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                      className="text-sm text-violet-600 hover:text-violet-800 font-medium"
                     >
                       View
                     </Link>
@@ -313,7 +313,7 @@ export default function SeekersClient({
                 value={bulkSubject}
                 onChange={(e) => setBulkSubject(e.target.value)}
                 placeholder={bulkAction === "task" ? "e.g. Complete your profile" : "e.g. Weekly update"}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               />
             </div>
 
@@ -326,7 +326,7 @@ export default function SeekersClient({
                 onChange={(e) => setBulkContent(e.target.value)}
                 rows={4}
                 placeholder="Write your message here…"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
               />
             </div>
 
@@ -337,7 +337,7 @@ export default function SeekersClient({
                   type="date"
                   value={bulkDueDate}
                   onChange={(e) => setBulkDueDate(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                 />
               </div>
             )}
@@ -352,7 +352,7 @@ export default function SeekersClient({
               <button
                 onClick={sendBulk}
                 disabled={!bulkSubject.trim() || !bulkContent.trim() || bulkSending}
-                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg"
+                className="flex-1 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg"
               >
                 {bulkSending ? "Sending…" : `Send to ${selected.size}`}
               </button>
@@ -370,7 +370,7 @@ function SeekerCard({ seeker, selected, onToggle }: { seeker: SeekerWithStats; s
   return (
     <div className={`relative bg-white rounded-lg shadow hover:shadow-md transition-shadow ${
       hasAttention ? "ring-2 ring-orange-400" : ""
-    } ${selected ? "ring-2 ring-blue-400" : ""}`}>
+    } ${selected ? "ring-2 ring-violet-400" : ""}`}>
       {/* Checkbox overlay */}
       <div className="absolute top-3 left-3 z-10">
         <input
@@ -378,7 +378,7 @@ function SeekerCard({ seeker, selected, onToggle }: { seeker: SeekerWithStats; s
           checked={selected}
           onChange={onToggle}
           onClick={(e) => e.stopPropagation()}
-          className="accent-blue-600 w-4 h-4"
+          className="accent-violet-600 w-4 h-4"
         />
       </div>
       <Link href={`/dashboard/seekers/${seeker.id}`} className="block p-5 pl-9">
@@ -392,7 +392,7 @@ function SeekerCard({ seeker, selected, onToggle }: { seeker: SeekerWithStats; s
               <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
                 <circle cx="18" cy="18" r="15.915" fill="none" stroke="#e5e7eb" strokeWidth="2" />
                 <circle
-                  cx="18" cy="18" r="15.915" fill="none" stroke="#3b82f6" strokeWidth="2"
+                  cx="18" cy="18" r="15.915" fill="none" stroke="#8b5cf6" strokeWidth="2"
                   strokeDasharray={`${seeker.profile_completion} ${100 - seeker.profile_completion}`}
                   strokeLinecap="round"
                 />
@@ -464,7 +464,7 @@ function Stat({
   color?: "blue" | "green" | "orange" | "purple";
 }) {
   const colorClasses: Record<string, string> = {
-    blue: "text-blue-600",
+    blue: "text-violet-600",
     green: "text-green-600",
     orange: "text-orange-600",
     purple: "text-purple-600",

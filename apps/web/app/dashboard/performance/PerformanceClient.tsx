@@ -24,7 +24,7 @@ function StatCard({
 }) {
   const colorMap = {
     gray: "text-gray-900",
-    blue: "text-blue-600",
+    blue: "text-violet-600",
     green: "text-green-600",
     purple: "text-purple-600",
     amber: "text-amber-600",
@@ -48,7 +48,7 @@ function RateBar({ label, value, max = 100 }: { label: string; value: number; ma
         <span className="font-semibold text-gray-700">{value}</span>
       </div>
       <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div className="h-2 bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+        <div className="h-2 bg-violet-500 rounded-full" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -115,14 +115,14 @@ export default function PerformanceClient({
         <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
           <h2 className="text-base font-semibold text-gray-900">Speed to Action</h2>
 
-          <div className="p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-700 font-medium">Avg. Days to First Interview</p>
-            <p className="text-4xl font-bold text-blue-600 mt-1">
+          <div className="p-4 bg-violet-50 rounded-lg">
+            <p className="text-sm text-violet-700 font-medium">Avg. Days to First Interview</p>
+            <p className="text-4xl font-bold text-violet-600 mt-1">
               {stats.avg_days_to_first_interview !== null
                 ? `${stats.avg_days_to_first_interview}d`
                 : "—"}
             </p>
-            <p className="text-xs text-blue-500 mt-1">
+            <p className="text-xs text-violet-500 mt-1">
               From assignment date to first scheduled interview
             </p>
           </div>

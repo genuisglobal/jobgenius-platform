@@ -113,7 +113,7 @@ export default function ReportsSettingsClient({
             onChange={(event) =>
               setSettings((prev) => ({ ...prev, system_prompt: event.target.value }))
             }
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500"
           />
           <p className="text-xs text-gray-500 mt-1">
             Sets model behavior and strategic lens for the report.
@@ -133,7 +133,7 @@ export default function ReportsSettingsClient({
                 output_instructions: event.target.value,
               }))
             }
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
           />
           <p className="text-xs text-gray-500 mt-1">
             Defines formatting and quality constraints for analysis, actions, and suggestions.
@@ -148,7 +148,7 @@ export default function ReportsSettingsClient({
             onChange={(event) =>
               setSettings((prev) => ({ ...prev, default_goal: event.target.value }))
             }
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
           />
           <p className="text-xs text-gray-500 mt-1">
             Applied when AM/admin does not provide a per-report goal.
@@ -167,7 +167,7 @@ export default function ReportsSettingsClient({
             onClick={handleSave}
             type="button"
             disabled={saving}
-            className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-2 text-sm rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
           >
             {saving ? "Saving..." : "Save Settings"}
           </button>

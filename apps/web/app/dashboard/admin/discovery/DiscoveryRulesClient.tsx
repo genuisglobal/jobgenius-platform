@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -20,6 +21,92 @@ type Source = {
   name: string;
   source_type: string | null;
   enabled: boolean | null;
+};
+
+type TelemetrySummary = {
+  totalRuns: number;
+  completedRuns: number;
+  failedRuns: number;
+  zeroYieldRuns: number;
+  healthySources: number;
+  watchSources: number;
+  poorSources: number;
+};
+
+type SourceHealth = {
+  sourceName: string;
+  totalRuns: number;
+  completedRuns: number;
+  failedRuns: number;
+  zeroYieldRuns: number;
+  successRate: number;
+  zeroYieldRate: number;
+  avgJobsFound: number;
+  avgNewJobs: number;
+  avgPagesScraped: number;
+  descriptionSuccessRate: number | null;
+  hiddenRecoveryRate: number;
+  saveErrorRate: number;
+  lastRunAt: string | null;
+  health: "healthy" | "watch" | "poor";
+  diagnostics: Array<{
+    kind:
+      | "adapter_fetch_failure"
+      | "blocked_or_auth"
+      | "timeout_or_navigation"
+      | "selector_drift"
+      | "zero_yield_stop"
+      | "low_description_capture"
+      | "save_errors"
+      | "other_failure";
+    label: string;
+    count: number;
+    severity: "warning" | "critical";
+  }>;
+  signals: Array<{
+    kind:
+      | "stop_reason"
+      | "selector_miss_rate"
+      | "hidden_recovery"
+      | "network_parse_rate"
+      | "description_fallback"
+      | "mirror_collapse";
+    label: string;
+    value: string;
+    severity: "info" | "warning";
+  }>;
+  dominantDiagnostic: string | null;
+  dominantStopReason: string | null;
+};
+
+type SearchAlert = {
+  searchId: string;
+  searchName: string;
+  sourceName: string;
+  location: string | null;
+  severity: "warning" | "critical";
+  kind: "overdue" | "failures" | "zero_yield";
+  message: string;
+};
+
+type RecentFailure = {
+  runId: string;
+  sourceName: string;
+  searchName: string | null;
+  location: string | null;
+  errorMessage: string;
+  createdAt: string | null;
+  diagnosticKind:
+    | "adapter_fetch_failure"
+    | "blocked_or_auth"
+    | "timeout_or_navigation"
+    | "selector_drift"
+    | "zero_yield_stop"
+    | "low_description_capture"
+    | "save_errors"
+    | "other_failure";
+  diagnosticLabel: string;
+  signalSummary: string | null;
 };
 
 type Message = {
@@ -48,18 +135,70 @@ function sourceLabel(source: Source) {
   return `${source.name} (${source.source_type})`;
 }
 
+function sourceSupportsPolicies(source: Source) {
+  return source.source_type !== "feed";
+}
+
+function healthBadgeClasses(health: SourceHealth["health"]) {
+  switch (health) {
+    case "healthy":
+      return "bg-green-100 text-green-800";
+    case "watch":
+      return "bg-amber-100 text-amber-800";
+    default:
+      return "bg-red-100 text-red-800";
+  }
+}
+
+function alertBadgeClasses(severity: SearchAlert["severity"]) {
+  return severity === "critical"
+    ? "bg-red-100 text-red-800"
+    : "bg-amber-100 text-amber-800";
+}
+
+function diagnosticBadgeClasses(severity: "warning" | "critical") {
+  return severity === "critical"
+    ? "bg-red-100 text-red-800"
+    : "bg-amber-100 text-amber-800";
+}
+
+function signalBadgeClasses(severity: "info" | "warning") {
+  return severity === "warning"
+    ? "bg-amber-100 text-amber-800"
+    : "bg-slate-100 text-slate-700";
+}
+
+function formatPercent(value: number | null) {
+  if (value === null) {
+    return "n/a";
+  }
+  return `${value}%`;
+}
+
+function sourceDetailHref(sourceName: string) {
+  return `/dashboard/admin/discovery/sources/${encodeURIComponent(sourceName)}`;
+}
+
 export default function DiscoveryRulesClient({
   policies,
   sources,
   isSuperAdmin,
   activeGeneratedSearches,
   totalGeneratedSearches,
+  telemetrySummary,
+  sourceHealth,
+  searchAlerts,
+  recentFailures,
 }: {
   policies: Policy[];
   sources: Source[];
   isSuperAdmin: boolean;
   activeGeneratedSearches: number;
   totalGeneratedSearches: number;
+  telemetrySummary: TelemetrySummary;
+  sourceHealth: SourceHealth[];
+  searchAlerts: SearchAlert[];
+  recentFailures: RecentFailure[];
 }) {
   const router = useRouter();
   const [message, setMessage] = useState<Message | null>(null);
@@ -72,10 +211,14 @@ export default function DiscoveryRulesClient({
     () => sources.filter((source) => source.enabled),
     [sources]
   );
+  const policyEligibleSources = useMemo(
+    () => enabledSources.filter(sourceSupportsPolicies),
+    [enabledSources]
+  );
   const hasSources = sources.length > 0;
 
   const [createForm, setCreateForm] = useState<CreatePolicyDraft>({
-    source_names: enabledSources[0]?.name ? [enabledSources[0].name] : [],
+    source_names: policyEligibleSources[0]?.name ? [policyEligibleSources[0].name] : [],
     job_title: "",
     location: "",
     run_frequency_hours: 24,
@@ -113,7 +256,7 @@ export default function DiscoveryRulesClient({
   function selectAllCreateSources() {
     setCreateForm((prev) => ({
       ...prev,
-      source_names: enabledSources.map((source) => source.name),
+      source_names: policyEligibleSources.map((source) => source.name),
     }));
   }
 
@@ -277,13 +420,13 @@ export default function DiscoveryRulesClient({
         <button
           onClick={runSync}
           disabled={syncing}
-          className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
         >
           {syncing ? "Syncing..." : "Sync Now"}
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-6 gap-4">
         <div className="bg-white rounded-lg shadow p-4">
           <p className="text-sm text-gray-500">Policies</p>
           <p className="text-2xl font-bold text-gray-900">{policies.length}</p>
@@ -295,6 +438,242 @@ export default function DiscoveryRulesClient({
         <div className="bg-white rounded-lg shadow p-4">
           <p className="text-sm text-gray-500">Active Generated Searches</p>
           <p className="text-2xl font-bold text-green-600">{activeGeneratedSearches}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <p className="text-sm text-gray-500">Recent Runs</p>
+          <p className="text-2xl font-bold text-gray-900">{telemetrySummary.totalRuns}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            {telemetrySummary.completedRuns} completed / {telemetrySummary.failedRuns} failed
+          </p>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <p className="text-sm text-gray-500">Healthy Sources</p>
+          <p className="text-2xl font-bold text-green-600">{telemetrySummary.healthySources}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <p className="text-sm text-gray-500">Watch / Poor</p>
+          <p className="text-2xl font-bold text-amber-600">
+            {telemetrySummary.watchSources + telemetrySummary.poorSources}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            {telemetrySummary.watchSources} watch / {telemetrySummary.poorSources} poor
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.65fr,1fr] gap-6">
+        <div className="bg-white rounded-lg shadow p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-gray-900">Source Health</h2>
+              <p className="text-sm text-gray-500">
+                Recent discovery performance by source.
+              </p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">
+                    Source
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">
+                    Health
+                  </th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">
+                    Success
+                  </th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">
+                    Zero Yield
+                  </th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">
+                    Avg Jobs
+                  </th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600 uppercase">
+                    Desc OK
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">
+                    Diagnostics
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">
+                    Signals
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {sourceHealth.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-3 py-6 text-sm text-center text-gray-500">
+                      No discovery runs yet.
+                    </td>
+                  </tr>
+                ) : (
+                  sourceHealth.map((source) => (
+                    <tr key={source.sourceName}>
+                      <td className="px-3 py-3 text-sm text-gray-900">
+                        <div className="font-medium">
+                          <Link
+                            href={sourceDetailHref(source.sourceName)}
+                            className="text-violet-600 hover:text-violet-800"
+                          >
+                            {source.sourceName}
+                          </Link>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {source.totalRuns} runs, {source.failedRuns} failed
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-sm">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${healthBadgeClasses(
+                            source.health
+                          )}`}
+                        >
+                          {source.health}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-sm text-right text-gray-700">
+                        {formatPercent(source.successRate)}
+                      </td>
+                      <td className="px-3 py-3 text-sm text-right text-gray-700">
+                        {formatPercent(source.zeroYieldRate)}
+                      </td>
+                      <td className="px-3 py-3 text-sm text-right text-gray-700">
+                        {source.avgJobsFound}
+                      </td>
+                      <td className="px-3 py-3 text-sm text-right text-gray-700">
+                        {formatPercent(source.descriptionSuccessRate)}
+                      </td>
+                      <td className="px-3 py-3 text-sm text-gray-700">
+                        {source.diagnostics.length === 0 ? (
+                          <span className="text-xs text-gray-400">No major issues</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {source.diagnostics.slice(0, 2).map((diagnostic) => (
+                              <span
+                                key={`${source.sourceName}-${diagnostic.kind}`}
+                                className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${diagnosticBadgeClasses(
+                                  diagnostic.severity
+                                )}`}
+                              >
+                                {diagnostic.label} ({diagnostic.count})
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-sm text-gray-700">
+                        {source.signals.length === 0 ? (
+                          <span className="text-xs text-gray-400">No extra telemetry</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {source.signals.slice(0, 3).map((signal) => (
+                              <span
+                                key={`${source.sourceName}-${signal.kind}`}
+                                className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${signalBadgeClasses(
+                                  signal.severity
+                                )}`}
+                              >
+                                {signal.label}: {signal.value}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg shadow p-5 space-y-3">
+            <h2 className="font-semibold text-gray-900">Search Alerts</h2>
+            <p className="text-sm text-gray-500">
+              Searches that need attention because they are overdue, failing, or returning zero jobs.
+            </p>
+            <div className="space-y-3">
+              {searchAlerts.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-200 p-4 text-sm text-gray-500">
+                  No active search alerts.
+                </div>
+              ) : (
+                searchAlerts.slice(0, 8).map((alert) => (
+                  <div key={`${alert.searchId}-${alert.kind}`} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{alert.searchName}</p>
+                        <p className="text-xs text-gray-500">
+                          {alert.sourceName}
+                          {alert.location ? ` • ${alert.location}` : ""}
+                        </p>
+                      </div>
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${alertBadgeClasses(
+                          alert.severity
+                        )}`}
+                      >
+                        {alert.severity}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-700">{alert.message}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-5 space-y-3">
+            <h2 className="font-semibold text-gray-900">Recent Failures</h2>
+            <p className="text-sm text-gray-500">
+              Latest failed runs from the discovery audit log.
+            </p>
+            <div className="space-y-3">
+              {recentFailures.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-200 p-4 text-sm text-gray-500">
+                  No recent failures.
+                </div>
+              ) : (
+                recentFailures.map((failure) => (
+                  <div key={failure.runId} className="rounded-lg border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          <Link
+                            href={sourceDetailHref(failure.sourceName)}
+                            className="text-violet-600 hover:text-violet-800"
+                          >
+                            {failure.searchName ?? "Unnamed search"}
+                          </Link>
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {failure.sourceName}
+                          {failure.location ? ` • ${failure.location}` : ""}
+                        </p>
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {failure.createdAt
+                          ? new Date(failure.createdAt).toLocaleString()
+                          : "Unknown time"}
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                        {failure.diagnosticLabel}
+                      </span>
+                    </div>
+                    {failure.signalSummary ? (
+                      <p className="mt-2 text-xs text-gray-500">{failure.signalSummary}</p>
+                    ) : null}
+                    <p className="mt-2 text-sm text-red-700">{failure.errorMessage}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -325,7 +704,7 @@ export default function DiscoveryRulesClient({
                   <button
                     type="button"
                     onClick={selectAllCreateSources}
-                    className="text-xs text-blue-600 hover:text-blue-800"
+                    className="text-xs text-violet-600 hover:text-violet-800"
                   >
                     Select all
                   </button>
@@ -339,10 +718,10 @@ export default function DiscoveryRulesClient({
                 </div>
               </div>
               <div className="border rounded-lg p-2 max-h-44 overflow-auto space-y-2 bg-white">
-                {enabledSources.length === 0 ? (
+                {policyEligibleSources.length === 0 ? (
                   <p className="text-xs text-gray-500">No enabled sources.</p>
                 ) : (
-                  enabledSources.map((source) => (
+                  policyEligibleSources.map((source) => (
                     <label
                       key={source.name}
                       className="flex items-center gap-2 text-sm text-gray-700"
@@ -360,6 +739,10 @@ export default function DiscoveryRulesClient({
               <p className="mt-1 text-xs text-gray-500">
                 {createForm.source_names.length} source
                 {createForm.source_names.length === 1 ? "" : "s"} selected.
+              </p>
+              <p className="mt-2 text-xs text-amber-700">
+                ATS feed sources like Greenhouse, Lever, Ashby, Workday, and SmartRecruiters
+                are company-specific and should be run directly, not through title/location policies.
               </p>
             </div>
             <div className="md:col-span-2">
@@ -414,7 +797,7 @@ export default function DiscoveryRulesClient({
             </label>
             <button
               onClick={createPolicy}
-              disabled={creating || !hasSources || enabledSources.length === 0}
+              disabled={creating || !hasSources || policyEligibleSources.length === 0}
               className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 disabled:opacity-50"
             >
               {creating ? "Creating..." : "Create Policy"}
@@ -422,7 +805,7 @@ export default function DiscoveryRulesClient({
           </div>
         </div>
       ) : (
-        <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-800">
+        <div className="bg-violet-50 border border-violet-100 rounded-lg p-4 text-sm text-violet-800">
           Admin view is read-only. Super admin can create or edit policy rules.
         </div>
       )}
@@ -479,11 +862,16 @@ export default function DiscoveryRulesClient({
                           }
                           className="w-full px-2 py-1 border rounded text-sm"
                         >
-                          {sources.map((source) => (
+                          {sources
+                            .filter(
+                              (source) =>
+                                sourceSupportsPolicies(source) || source.name === draft.source_name
+                            )
+                            .map((source) => (
                             <option key={source.name} value={source.name}>
                               {sourceLabel(source)}
                             </option>
-                          ))}
+                            ))}
                         </select>
                       ) : (
                         policy.source_name
@@ -585,7 +973,7 @@ export default function DiscoveryRulesClient({
                           <button
                             onClick={() => savePolicy(policy.id)}
                             disabled={busy}
-                            className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 disabled:opacity-50"
+                            className="px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded hover:bg-violet-700 disabled:opacity-50"
                           >
                             {savingPolicyId === policy.id ? "Saving..." : "Save"}
                           </button>

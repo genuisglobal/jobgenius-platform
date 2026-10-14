@@ -27,7 +27,12 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const { question_key, question_text, answer } = body;
 
   if (!question_key || !question_text) {

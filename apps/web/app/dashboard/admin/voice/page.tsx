@@ -9,6 +9,7 @@ type VoicePlaybookRow = {
   name: string;
   is_active: boolean;
   pathway_id: string | null;
+  retell_agent_id: string | null;
   system_prompt: string;
   assistant_goal: string | null;
   guardrails: string | null;
@@ -64,7 +65,7 @@ export default async function AdminVoiceAutomationPage() {
     supabaseAdmin
       .from("voice_playbooks")
       .select(
-        "id, call_type, name, is_active, pathway_id, system_prompt, assistant_goal, guardrails, escalation_rules, max_retry_attempts, retry_backoff_minutes, updated_at"
+        "id, call_type, name, is_active, pathway_id, retell_agent_id, system_prompt, assistant_goal, guardrails, escalation_rules, max_retry_attempts, retry_backoff_minutes, updated_at"
       )
       .order("call_type", { ascending: true })
       .order("updated_at", { ascending: false }),

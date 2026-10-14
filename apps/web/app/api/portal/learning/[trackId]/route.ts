@@ -1,5 +1,16 @@
 import { requireJobSeeker } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/auth";
+import {
+  computeTrackSummary,
+  isDueReview,
+  type DashboardLesson,
+  type DashboardProgress,
+} from "@/lib/learning/dashboard-metrics";
+
+type TrackLesson = DashboardLesson & {
+  sort_order?: number | null;
+  [key: string]: unknown;
+};
 
 export async function GET(
   request: Request,
@@ -30,7 +41,10 @@ export async function GET(
   // Get progress for all lessons in this track
   const lessonIds = ((track.learning_lessons as { id: string }[]) ?? []).map((l) => l.id);
 
-  let progress: { lesson_id: string; status: string; started_at: string | null; completed_at: string | null; time_spent_seconds: number; quiz_score: number | null }[] = [];
+  let progress: (DashboardProgress & {
+    started_at: string | null;
+    quiz_score: number | null;
+  })[] = [];
   if (lessonIds.length > 0) {
     const { data } = await supabaseAdmin
       .from("learning_progress")
@@ -55,29 +69,37 @@ export async function GET(
   const bookmarkSet = new Set(bookmarks.map((b) => b.lesson_id));
 
   // Sort lessons by sort_order
-  const lessons = ((track.learning_lessons as Record<string, unknown>[]) ?? [])
+  const lessons = ((track.learning_lessons as TrackLesson[]) ?? [])
     .sort((a, b) => ((a.sort_order as number) ?? 0) - ((b.sort_order as number) ?? 0))
     .map((lesson) => ({
       ...lesson,
-      progress: progressMap.get(lesson.id as string) ?? null,
-      is_bookmarked: bookmarkSet.has(lesson.id as string),
+      progress: progressMap.get(lesson.id) ?? null,
+      is_bookmarked: bookmarkSet.has(lesson.id),
+      is_due_for_review: isDueReview(progressMap.get(lesson.id)?.next_review_at ?? null),
     }));
-
-  const completedCount = lessons.filter(
-    (l) => l.progress?.status === "completed"
-  ).length;
+  const summary = computeTrackSummary(
+    {
+      id: track.id,
+      creation_mode: track.creation_mode,
+      learning_lessons: lessons.map((lesson) => ({
+        id: lesson.id,
+        skill_slug: typeof lesson.skill_slug === "string" ? lesson.skill_slug : null,
+      })),
+    },
+    progressMap
+  );
 
   return Response.json({
     track: {
       ...track,
       learning_lessons: lessons,
       progress: {
-        total_lessons: lessons.length,
-        completed_lessons: completedCount,
-        percentage:
-          lessons.length > 0
-            ? Math.round((completedCount / lessons.length) * 100)
-            : 0,
+        total_lessons: summary.totalLessons,
+        completed_lessons: summary.completedLessons,
+        percentage: summary.percentage,
+        due_review_count: summary.dueReviewCount,
+        mastery_average: summary.masteryAverage,
+        weak_skills: summary.weakSkills,
       },
     },
   });

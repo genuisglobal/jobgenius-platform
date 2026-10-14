@@ -59,6 +59,22 @@ function decryptString(payload, key) {
   return decrypted.toString("utf8");
 }
 
+// Parse a storage-state blob downloaded from the server bucket, which may be
+// plaintext JSON or an encrypted envelope (when STATE_ENCRYPTION_KEY is set).
+export function parseStorageStateText(text) {
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    const key = getStateKey();
+    if (key && parsed?.iv && parsed?.tag && parsed?.data) {
+      return JSON.parse(decryptString(text, key));
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export function readStorageState({ encryptedPath, legacyPath, key }) {
   if (key && fs.existsSync(encryptedPath)) {
     const payload = fs.readFileSync(encryptedPath, "utf8");

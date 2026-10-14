@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, supabaseAdmin } from "@/lib/auth";
+import { loadAdjacentOperatorAnalytics } from "@/lib/analytics/adjacent-operator";
 import { normalizeAMRole } from "@/lib/auth/roles";
 import AnalyticsClient from "./AnalyticsClient";
+import { countDistinctAppliedSeekers, SUCCESSFUL_APPLICATION_STATUSES } from "@/lib/application-stats";
 
 type LeaderboardEntry = {
   id: string;
@@ -35,17 +37,21 @@ export default async function AnalyticsPage() {
     { count: applicationsThisMonth },
     { count: applicationsPrevMonth },
     { data: amList },
+    adjacentOperator,
   ] = await Promise.all([
     supabaseAdmin.from("job_seekers").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabaseAdmin.from("job_seeker_assignments").select("job_seeker_id", { count: "exact", head: true }),
-    supabaseAdmin.from("applications").select("job_seeker_id", { count: "exact", head: true }),
+    countDistinctAppliedSeekers(supabaseAdmin),
     supabaseAdmin.from("interviews").select("job_seeker_id", { count: "exact", head: true }),
     supabaseAdmin.from("job_seekers").select("id", { count: "exact", head: true }).not("placed_at", "is", null),
     supabaseAdmin.from("interviews").select("id", { count: "exact", head: true }).gte("scheduled_at", monthStart),
     supabaseAdmin.from("interviews").select("id", { count: "exact", head: true }).gte("scheduled_at", prevMonthStart).lt("scheduled_at", monthStart),
-    supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).gte("applied_at", monthStart),
-    supabaseAdmin.from("applications").select("id", { count: "exact", head: true }).gte("applied_at", prevMonthStart).lt("applied_at", monthStart),
-    supabaseAdmin.from("account_managers").select("id, full_name, profile_photo_url").eq("status", "active").limit(20),
+    supabaseAdmin.from("application_runs").select("id", { count: "exact", head: true }).in("status", SUCCESSFUL_APPLICATION_STATUSES).gte("applied_at", monthStart),
+    supabaseAdmin.from("application_runs").select("id", { count: "exact", head: true }).in("status", SUCCESSFUL_APPLICATION_STATUSES).gte("applied_at", prevMonthStart).lt("applied_at", monthStart),
+    // `name`, not `full_name`; account_managers has no photo column either
+    // (profile_photo_url belongs to job_seekers).
+    supabaseAdmin.from("account_managers").select("id, name").eq("status", "active").limit(20),
+    loadAdjacentOperatorAnalytics(),
   ]);
 
   let leaderboard: LeaderboardEntry[] = [];
@@ -84,8 +90,9 @@ export default async function AnalyticsPage() {
       const placed = placedMap.get(am.id) ?? 0;
       return {
         id: am.id,
-        full_name: am.full_name,
-        photo: am.profile_photo_url ?? null,
+        // Prop stays `full_name` — it is the shape AnalyticsClient consumes.
+        full_name: am.name,
+        photo: null,
         total_seekers: total,
         placed,
         interviews: ivMap.get(am.id) ?? 0,
@@ -114,6 +121,7 @@ export default async function AnalyticsPage() {
         applications_prev_month: applicationsPrevMonth ?? 0,
       }}
       leaderboard={leaderboard}
+      adjacentOperator={adjacentOperator}
     />
   );
 }

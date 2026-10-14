@@ -1,4 +1,5 @@
 import { getAccountManagerFromRequest } from "@/lib/am-access";
+import { normalizeLearningSkills, toSkillSlug } from "@/lib/learning/target-mapper";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export async function GET(
@@ -43,6 +44,10 @@ export async function PATCH(
     description?: string;
     category?: string;
     status?: string;
+    creation_mode?: string;
+    target_skill?: string | null;
+    focus_skills?: string[] | null;
+    job_post_id?: string | null;
     sort_order?: number;
   };
 
@@ -61,6 +66,26 @@ export async function PATCH(
   const validCategories = ["technical", "behavioral", "industry", "tools", "general"];
   if (body.category && validCategories.includes(body.category)) {
     updates.category = body.category;
+  }
+
+  const validCreationModes = ["blank", "job_gap_refresh", "manual_skill_refresh"];
+  if (body.creation_mode && validCreationModes.includes(body.creation_mode)) {
+    updates.creation_mode = body.creation_mode;
+  }
+
+  if (body.job_post_id !== undefined) {
+    updates.job_post_id = body.job_post_id;
+  }
+
+  if (body.target_skill !== undefined || body.focus_skills !== undefined) {
+    const focusSkills = normalizeLearningSkills([
+      body.target_skill ?? undefined,
+      ...(Array.isArray(body.focus_skills) ? body.focus_skills : []),
+    ]);
+    const primarySkill = focusSkills[0] ?? null;
+    updates.target_skill = primarySkill;
+    updates.target_skill_slug = primarySkill ? toSkillSlug(primarySkill) : null;
+    updates.focus_skills = focusSkills;
   }
 
   const validStatuses = ["draft", "published", "archived"];

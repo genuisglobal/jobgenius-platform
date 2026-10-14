@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/auth";
 import { verifyExtensionSession } from "@/lib/extension-auth";
-import { buildMatchExplanation } from "@/lib/matching/explanations";
+import {
+  buildAdjacentOpportunity,
+  buildMatchExplanation,
+} from "@/lib/matching/explanations";
 
 type JobPostRow = {
   id: string;
@@ -67,6 +70,9 @@ type JobCard = {
   confidence: string | null;
   recommendation: string | null;
   reasons: Record<string, unknown> | null;
+  match_lane: "primary" | "adjacent";
+  adjacent_reason: string | null;
+  adjacent_supporting_reasons: string[];
 };
 
 function resolveSingle<T>(value: T | T[] | null | undefined): T | null {
@@ -99,7 +105,9 @@ function putIfNewer<T extends { updated_at: string | null }>(
  * GET /api/extension/matched-jobs
  *
  * Returns matched jobs for the active job seeker in the extension session.
- * Includes jobs in NEEDS_ATTENTION so extension can resume/handoff workflows.
+ * Includes jobs in NEEDS_ATTENTION so extension can resume/handoff workflows,
+ * plus a separate adjacent lane for below-threshold roles with strong
+ * underlying fit but weaker title alignment.
  */
 export async function GET(request: Request) {
   try {
@@ -126,6 +134,7 @@ export async function GET(request: Request) {
       .single();
 
     const threshold = seeker?.match_threshold ?? 50;
+    const adjacentFloor = Math.max(40, threshold - 15);
 
     // Base list: matched jobs above threshold
     const { data: matches, error: matchError } = await supabaseAdmin
@@ -150,6 +159,7 @@ export async function GET(request: Request) {
         )
       `)
       .eq("job_seeker_id", session.active_job_seeker_id)
+      .is("archived_at", null)
       .gte("score", threshold)
       .order("score", { ascending: false })
       .limit(100);
@@ -186,7 +196,80 @@ export async function GET(request: Request) {
         confidence: matchRow.confidence,
         recommendation: matchRow.recommendation,
         reasons: matchRow.reasons,
+        match_lane: "primary",
+        adjacent_reason: null,
+        adjacent_supporting_reasons: [],
       });
+    }
+
+    const adjacentCandidates: Array<{
+      jobPost: JobPostRow;
+      matchRow: MatchRow;
+      headline: string;
+      supportingReasons: string[];
+    }> = [];
+
+    if (threshold > adjacentFloor) {
+      const { data: adjacentMatches, error: adjacentError } = await supabaseAdmin
+        .from("job_match_scores")
+        .select(`
+          score,
+          confidence,
+          recommendation,
+          reasons,
+          job_posts!inner (
+            id,
+            title,
+            company,
+            location,
+            url,
+            work_type,
+            salary_min,
+            salary_max,
+            seniority_level,
+            is_active,
+            created_at
+          )
+        `)
+        .eq("job_seeker_id", session.active_job_seeker_id)
+        .is("archived_at", null)
+        .lt("score", threshold)
+        .gte("score", adjacentFloor)
+        .order("score", { ascending: false })
+        .limit(80);
+
+      if (adjacentError) {
+        console.error("Error fetching adjacent matched jobs:", adjacentError);
+        return NextResponse.json(
+          { error: "Failed to fetch adjacent matched jobs." },
+          { status: 500 }
+        );
+      }
+
+      for (const matchRow of (adjacentMatches ?? []) as MatchRow[]) {
+        const jobPost = resolveSingle(matchRow.job_posts);
+        if (!jobPost?.id || jobCards.has(jobPost.id)) {
+          continue;
+        }
+
+        const adjacent = buildAdjacentOpportunity(matchRow.reasons, {
+          score: matchRow.score ?? null,
+          confidence: matchRow.confidence ?? null,
+          recommendation: matchRow.recommendation ?? null,
+          threshold,
+        });
+
+        if (!adjacent.eligible || !adjacent.headline) {
+          continue;
+        }
+
+        adjacentCandidates.push({
+          jobPost,
+          matchRow,
+          headline: adjacent.headline,
+          supportingReasons: adjacent.supportingReasons,
+        });
+      }
     }
 
     // Always include historical NEEDS_ATTENTION runs, even if score fell below threshold.
@@ -261,16 +344,54 @@ export async function GET(request: Request) {
           confidence: score?.confidence ?? null,
           recommendation: score?.recommendation ?? null,
           reasons: score?.reasons ?? null,
+          match_lane: "primary",
+          adjacent_reason: null,
+          adjacent_supporting_reasons: [],
         });
       }
     }
 
-    const allJobIds = Array.from(jobCards.keys());
+    const adjacentCards = new Map<string, JobCard>();
+    for (const candidate of adjacentCandidates) {
+      if (jobCards.has(candidate.jobPost.id)) {
+        continue;
+      }
+
+      adjacentCards.set(candidate.jobPost.id, {
+        id: candidate.jobPost.id,
+        title: candidate.jobPost.title,
+        company: candidate.jobPost.company,
+        location: candidate.jobPost.location,
+        url: candidate.jobPost.url,
+        work_type: candidate.jobPost.work_type,
+        salary_min: candidate.jobPost.salary_min,
+        salary_max: candidate.jobPost.salary_max,
+        seniority_level: candidate.jobPost.seniority_level,
+        created_at: candidate.jobPost.created_at,
+        score: candidate.matchRow.score,
+        confidence: candidate.matchRow.confidence,
+        recommendation: candidate.matchRow.recommendation,
+        reasons: candidate.matchRow.reasons,
+        match_lane: "adjacent",
+        adjacent_reason: candidate.headline,
+        adjacent_supporting_reasons: candidate.supportingReasons,
+      });
+    }
+
+    const allJobIds = Array.from(
+      new Set(
+        Array.from(jobCards.keys()).concat(Array.from(adjacentCards.keys()))
+      )
+    );
     if (allJobIds.length === 0) {
       return NextResponse.json({
         jobs: [],
+        adjacent_jobs: [],
         threshold,
+        adjacent_floor: adjacentFloor,
         total: 0,
+        tracked_total: 0,
+        adjacent_total: 0,
         needs_attention_total: 0,
       });
     }
@@ -303,37 +424,43 @@ export async function GET(request: Request) {
       putIfNewer(runByJobId, row.job_post_id, row);
     }
 
-    const jobs = Array.from(jobCards.values())
-      .map((job) => {
-        const queue = queueByJobId.get(job.id);
-        const run = runByJobId.get(job.id) ?? attentionByJobId.get(job.id) ?? null;
-        const queueStatus = queue?.status ?? run?.status ?? null;
-        const needsAttention = queueStatus === "NEEDS_ATTENTION";
-        const explanation = buildMatchExplanation(job.reasons, {
-          score: job.score ?? null,
-          confidence: job.confidence ?? null,
-          recommendation: job.recommendation ?? null,
-        });
-        const { reasons: _reasons, ...jobCard } = job;
+    const materializeJob = (job: JobCard) => {
+      const queue = queueByJobId.get(job.id);
+      const run = runByJobId.get(job.id) ?? attentionByJobId.get(job.id) ?? null;
+      const queueStatus = queue?.status ?? run?.status ?? null;
+      const needsAttention = queueStatus === "NEEDS_ATTENTION";
+      const explanation = buildMatchExplanation(job.reasons, {
+        score: job.score ?? null,
+        confidence: job.confidence ?? null,
+        recommendation: job.recommendation ?? null,
+      });
+      const { reasons: _reasons, ...jobCard } = job;
 
-        return {
-          ...jobCard,
-          queue_status: queueStatus,
-          queue_id: queue?.id ?? null,
-          run_id: run?.id ?? null,
-          run_status: run?.status ?? null,
-          current_step: run?.current_step ?? null,
-          last_error: run?.last_error ?? queue?.last_error ?? null,
-          last_error_code: run?.last_error_code ?? null,
-          needs_attention_reason: run?.needs_attention_reason ?? null,
-          needs_attention: needsAttention,
-          updated_at: run?.updated_at ?? queue?.updated_at ?? null,
-          score_summary: explanation.highlights,
-          score_blockers: [...explanation.blockers, ...explanation.cautions],
-          queue_blocked: explanation.queueBlocked,
-          queue_block_reason: explanation.queueBlockReason,
-        };
-      })
+      return {
+        ...jobCard,
+        queue_status: queueStatus,
+        queue_id: queue?.id ?? null,
+        run_id: run?.id ?? null,
+        run_status: run?.status ?? null,
+        current_step: run?.current_step ?? null,
+        last_error: run?.last_error ?? queue?.last_error ?? null,
+        last_error_code: run?.last_error_code ?? null,
+        needs_attention_reason: run?.needs_attention_reason ?? null,
+        needs_attention: needsAttention,
+        updated_at: run?.updated_at ?? queue?.updated_at ?? null,
+        score_summary:
+          job.match_lane === "adjacent" && job.adjacent_supporting_reasons.length > 0
+            ? job.adjacent_supporting_reasons
+            : explanation.highlights,
+        score_blockers: [...explanation.blockers, ...explanation.cautions],
+        queue_blocked: explanation.queueBlocked,
+        queue_block_reason: explanation.queueBlockReason,
+        manual_review_recommended: job.match_lane === "adjacent",
+      };
+    };
+
+    const jobs = Array.from(jobCards.values())
+      .map(materializeJob)
       .sort((a, b) => {
         if (a.needs_attention !== b.needs_attention) {
           return a.needs_attention ? -1 : 1;
@@ -346,10 +473,25 @@ export async function GET(request: Request) {
         return toEpoch(b.created_at) - toEpoch(a.created_at);
       });
 
+    const adjacentJobs = Array.from(adjacentCards.values())
+      .map(materializeJob)
+      .sort((a, b) => {
+        const scoreA = Number.isFinite(a.score ?? NaN) ? (a.score as number) : -1;
+        const scoreB = Number.isFinite(b.score ?? NaN) ? (b.score as number) : -1;
+        if (scoreA !== scoreB) {
+          return scoreB - scoreA;
+        }
+        return toEpoch(b.created_at) - toEpoch(a.created_at);
+      });
+
     return NextResponse.json({
       jobs,
+      adjacent_jobs: adjacentJobs,
       threshold,
-      total: jobs.length,
+      adjacent_floor: adjacentFloor,
+      total: jobs.length + adjacentJobs.length,
+      tracked_total: jobs.length,
+      adjacent_total: adjacentJobs.length,
       needs_attention_total: jobs.filter((job) => job.needs_attention).length,
     });
   } catch (error) {

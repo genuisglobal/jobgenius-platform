@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOpsAuth } from "@/lib/ops-auth";
+import { enforceOpsRateLimit } from "@/lib/rate-limit-presets";
 import { supabaseServer } from "@/lib/supabase/server";
 import { enqueueBackgroundJob } from "@/lib/background-jobs";
 import {
@@ -67,12 +68,25 @@ async function autoTargetsForLeadQualification(limit: number): Promise<DispatchT
     .select("id, full_name, phone, owner_account_manager_id")
     .in("status", ["new", "nurture"])
     .eq("consent_voice", true)
+    .eq("handled_by", "emi")
     .not("phone", "is", null)
     .or(`next_call_due_at.is.null,next_call_due_at.lte.${nowIso}`)
     .order("created_at", { ascending: true })
     .limit(limit);
 
+  // Skip leads that already have a call waiting or in flight (Emi schedules her own retries).
+  const ids = (rows ?? []).map((row) => row.id as string);
+  const { data: activeCalls } = ids.length
+    ? await supabaseServer
+        .from("voice_calls")
+        .select("lead_submission_id")
+        .in("lead_submission_id", ids)
+        .in("status", ["queued", "initiated", "ringing", "in_progress"])
+    : { data: [] };
+  const busy = new Set((activeCalls ?? []).map((c) => c.lead_submission_id as string));
+
   return (rows ?? [])
+    .filter((row) => !busy.has(row.id as string))
     .map((row) => ({
       jobSeekerId: null,
       leadSubmissionId: (row.id as string | undefined) ?? null,
@@ -112,7 +126,7 @@ async function autoTargetsForOnboarding(limit: number): Promise<DispatchTarget[]
   return targets;
 }
 
-async function autoTargetsForInterviewPrep(
+async function autoTargetsForInterviewWarmup(
   limit: number,
   windowHours: number
 ): Promise<DispatchTarget[]> {
@@ -194,7 +208,7 @@ async function autoTargetsForInterviewPrep(
       fullName,
       accountManagerId:
         typeof row.account_manager_id === "string" ? row.account_manager_id : null,
-      callType: "interview_prep",
+      callType: "interview_warmup",
     });
 
     if (targets.length >= limit) {
@@ -294,8 +308,8 @@ async function resolveTargets(payload: DispatchPayload): Promise<DispatchTarget[
   if (normalizedCallType === "onboarding") {
     return autoTargetsForOnboarding(limit);
   }
-  if (normalizedCallType === "interview_prep") {
-    return autoTargetsForInterviewPrep(limit, windowHours);
+  if (normalizedCallType === "interview_warmup") {
+    return autoTargetsForInterviewWarmup(limit, windowHours);
   }
 
   return [];
@@ -349,7 +363,7 @@ async function dispatch(payload: DispatchPayload) {
     const { data: voiceCall, error } = await supabaseServer
       .from("voice_calls")
       .insert({
-        provider: "bland",
+        provider: "retell",
         direction: "outbound",
         call_type: target.callType,
         status: "queued",
@@ -357,7 +371,7 @@ async function dispatch(payload: DispatchPayload) {
         lead_submission_id: target.leadSubmissionId,
         account_manager_id: target.accountManagerId,
         playbook_id: playbook.id,
-        from_number: process.env.BLAND_DEFAULT_FROM_NUMBER ?? null,
+        from_number: process.env.RETELL_DEFAULT_FROM_NUMBER ?? null,
         to_number: target.phoneNumber,
         contact_name: target.fullName,
         task,
@@ -408,6 +422,9 @@ async function dispatch(payload: DispatchPayload) {
 }
 
 export async function POST(request: Request) {
+  const rl = await enforceOpsRateLimit(request);
+  if (!rl.allowed) return rl.response;
+
   const auth = requireOpsAuth(request.headers, request.url);
   if (!auth.ok) {
     return NextResponse.json({ success: false, error: auth.error }, { status: 401 });
@@ -424,6 +441,9 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  const rl = await enforceOpsRateLimit(request);
+  if (!rl.allowed) return rl.response;
+
   const auth = requireOpsAuth(request.headers, request.url);
   if (!auth.ok) {
     return NextResponse.json({ success: false, error: auth.error }, { status: 401 });

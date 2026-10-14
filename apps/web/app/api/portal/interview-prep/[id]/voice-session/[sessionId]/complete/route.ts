@@ -1,10 +1,27 @@
 import { requireJobSeeker } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/auth";
-import { scorePracticeAnswer } from "@/lib/portal/practice-scoring";
+import { loadInterviewContext, normalizePersona } from "@/lib/portal/interview-context";
+import { evaluateInterview, type QAPair } from "@/lib/portal/interview-evaluator";
+import { resolveAssignedAccountManagerId } from "@/lib/voice/service";
+import { logActivity } from "@/lib/feedback-loop";
 
 type TurnPayload = {
   speaker: "interviewer" | "candidate";
   content: string;
+};
+
+type TurnRow = {
+  session_id: string;
+  turn_number: number;
+  speaker: "interviewer" | "candidate";
+  content: string;
+  score?: number | null;
+  feedback?: string | null;
+  star_score?: number | null;
+  relevance_score?: number | null;
+  specificity_score?: number | null;
+  confidence_coaching?: string | null;
+  rewrite_suggestions?: unknown;
 };
 
 export async function POST(
@@ -39,7 +56,7 @@ export async function POST(
   const cleaned = rawTurns
     .filter((t) => t && typeof t.content === "string" && t.content.trim().length > 0)
     .map((t) => ({
-      speaker: t.speaker === "interviewer" ? "interviewer" : "candidate",
+      speaker: t.speaker === "interviewer" ? ("interviewer" as const) : ("candidate" as const),
       content: t.content.trim(),
     }));
 
@@ -47,28 +64,52 @@ export async function POST(
     return Response.json({ error: "No transcript content to save." }, { status: 400 });
   }
 
-  await supabaseAdmin
+  // Pair each candidate answer with the preceding interviewer question (in order).
+  const qaPairs: QAPair[] = [];
+  let lastQuestion = "Interview response";
+  for (const turn of cleaned) {
+    if (turn.speaker === "interviewer") {
+      lastQuestion = turn.content;
+    } else {
+      qaPairs.push({ question: lastQuestion, answer: turn.content });
+    }
+  }
+
+  // Load grounding context (résumé + JD) and run the evaluator (AI w/ fallback).
+  const context = await loadInterviewContext(params.id, auth.user.id);
+  const persona = normalizePersona(session.interviewer_persona);
+  const evaluation = context
+    ? await evaluateInterview({ context, persona, qaPairs })
+    : null;
+
+  // Fallback evaluation when prep context could not be loaded.
+  const evalResult =
+    evaluation ??
+    (await evaluateInterview({
+      context: {
+        job: { title: "the role", company: null, description: null },
+        candidate: { fullName: null, skills: [], workHistory: [], education: [] },
+        hasResume: false,
+      },
+      persona,
+      qaPairs,
+    }));
+
+  // Build turn rows, consuming per-answer evaluations in order for candidate turns.
+  const { error: deleteError } = await supabaseAdmin
     .from("voice_interview_turns")
     .delete()
     .eq("session_id", params.sessionId);
 
-  const rows: Array<{
-    session_id: string;
-    turn_number: number;
-    speaker: "interviewer" | "candidate";
-    content: string;
-    score?: number | null;
-    feedback?: string | null;
-  }> = [];
+  if (deleteError) {
+    console.error("[portal:voice-complete] failed to delete old turns:", deleteError);
+  }
 
-  let lastQuestion = "Interview response";
-  let totalScore = 0;
-  let scoreCount = 0;
-
+  const rows: TurnRow[] = [];
+  let answerIndex = 0;
   for (const turn of cleaned) {
     const turnNumber = rows.length;
     if (turn.speaker === "interviewer") {
-      lastQuestion = turn.content;
       rows.push({
         session_id: params.sessionId,
         turn_number: turnNumber,
@@ -78,17 +119,21 @@ export async function POST(
       continue;
     }
 
-    const score = scorePracticeAnswer(lastQuestion, turn.content);
+    const answer = evalResult.answers[answerIndex];
+    answerIndex += 1;
     rows.push({
       session_id: params.sessionId,
       turn_number: turnNumber,
       speaker: "candidate",
       content: turn.content,
-      score: score.score,
-      feedback: score.feedback,
+      score: answer?.score ?? null,
+      feedback: answer?.feedback ?? null,
+      star_score: answer?.star_score ?? null,
+      relevance_score: answer?.relevance_score ?? null,
+      specificity_score: answer?.specificity_score ?? null,
+      confidence_coaching: answer?.confidence_coaching ?? null,
+      rewrite_suggestions: answer?.rewrite_suggestions ?? [],
     });
-    totalScore += score.score;
-    scoreCount += 1;
   }
 
   const { error: insertError } = await supabaseAdmin
@@ -99,24 +144,21 @@ export async function POST(
     return Response.json({ error: "Failed to save transcript." }, { status: 500 });
   }
 
-  const overallScore = scoreCount > 0 ? Math.round(totalScore / scoreCount) : null;
-  const overallFeedback =
-    overallScore !== null
-      ? overallScore >= 80
-        ? "Excellent performance! You demonstrated strong communication and clear examples."
-        : overallScore >= 60
-        ? "Good effort. Focus on providing more specific examples and quantifying your impact."
-        : "Keep practicing. Work on structuring your answers using the STAR method."
-      : null;
-
   const { data: updated, error: updateError } = await supabaseAdmin
     .from("voice_interview_sessions")
     .update({
       status: "completed",
       completed_at: new Date().toISOString(),
       total_turns: rows.length,
-      overall_score: overallScore,
-      overall_feedback: overallFeedback,
+      overall_score: qaPairs.length > 0 ? evalResult.overallScore : null,
+      overall_feedback: qaPairs.length > 0 ? evalResult.summary : null,
+      star_score: qaPairs.length > 0 ? evalResult.starScore : null,
+      communication_score: qaPairs.length > 0 ? evalResult.communicationScore : null,
+      relevance_score: qaPairs.length > 0 ? evalResult.relevanceScore : null,
+      feedback_report: qaPairs.length > 0 ? evalResult.report : null,
+      am_coaching_note: qaPairs.length > 0 ? evalResult.amCoachingNote : null,
+      scored_by: evalResult.scoredBy,
+      resume_grounded: context?.hasResume ?? false,
     })
     .eq("id", params.sessionId)
     .select("*")
@@ -124,6 +166,30 @@ export async function POST(
 
   if (updateError || !updated) {
     return Response.json({ error: "Failed to complete session." }, { status: 500 });
+  }
+
+  // Surface results to the candidate's Account Manager via the activity timeline.
+  if (qaPairs.length > 0) {
+    try {
+      await logActivity(auth.user.id, {
+        eventType: "mock_interview_completed",
+        title: `Mock interview completed — ${evalResult.overallScore}%`,
+        description: evalResult.amCoachingNote,
+        meta: {
+          interview_prep_id: params.id,
+          persona,
+          overall_score: evalResult.overallScore,
+          star_score: evalResult.starScore,
+          communication_score: evalResult.communicationScore,
+          relevance_score: evalResult.relevanceScore,
+          scored_by: evalResult.scoredBy,
+        },
+        refType: "interview_prep_session",
+        refId: params.sessionId,
+      });
+    } catch (err) {
+      console.error("[portal:voice-complete] failed to log activity:", err);
+    }
   }
 
   const { data: storedTurns } = await supabaseAdmin

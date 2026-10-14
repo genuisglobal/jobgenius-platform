@@ -1,6 +1,6 @@
 import { requireJobSeeker } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/auth";
-import { getInterviewerResponse } from "@/lib/portal/ai-voice-interviewer";
+import { normalizePersona } from "@/lib/portal/interview-context";
 
 export async function GET(
   request: Request,
@@ -13,7 +13,9 @@ export async function GET(
 
   const { data: sessions } = await supabaseAdmin
     .from("voice_interview_sessions")
-    .select("id, interviewer_persona, status, total_turns, overall_score, overall_feedback, started_at, completed_at, created_at")
+    .select(
+      "id, interviewer_persona, status, total_turns, overall_score, overall_feedback, started_at, completed_at, created_at"
+    )
     .eq("interview_prep_id", params.id)
     .eq("job_seeker_id", auth.user.id)
     .order("created_at", { ascending: false });
@@ -33,7 +35,7 @@ export async function POST(
   // Verify prep ownership
   const { data: prep } = await supabaseAdmin
     .from("interview_prep")
-    .select("id, job_post_id")
+    .select("id")
     .eq("id", params.id)
     .eq("job_seeker_id", auth.user.id)
     .single();
@@ -42,39 +44,17 @@ export async function POST(
     return Response.json({ error: "Interview prep not found." }, { status: 404 });
   }
 
-  let body: { persona?: string; mode?: string } = {};
+  let body: { persona?: string } = {};
   try {
     body = await request.json();
   } catch {
     // defaults
   }
 
-  const validPersonas = ["professional", "technical", "behavioral", "stress"];
-  const persona = validPersonas.includes(body.persona ?? "")
-    ? body.persona!
-    : "professional";
-  const mode = body.mode === "realtime" ? "realtime" : "legacy";
+  const persona = normalizePersona(body.persona);
 
-  // Get job details for context
-  let jobTitle = "Position";
-  let companyName: string | null = null;
-  let descriptionText: string | null = null;
-
-  if (prep.job_post_id) {
-    const { data: jobPost } = await supabaseAdmin
-      .from("job_posts")
-      .select("title, company, description_text")
-      .eq("id", prep.job_post_id)
-      .single();
-
-    if (jobPost) {
-      jobTitle = jobPost.title;
-      companyName = jobPost.company;
-      descriptionText = jobPost.description_text;
-    }
-  }
-
-  // Create session
+  // Create the session. The live interview is driven by the Realtime client,
+  // which connects via the realtime-token route and finalizes via /complete.
   const { data: session, error: sessionError } = await supabaseAdmin
     .from("voice_interview_sessions")
     .insert({
@@ -91,47 +71,5 @@ export async function POST(
     return Response.json({ error: "Failed to create session." }, { status: 500 });
   }
 
-  if (mode === "realtime") {
-    return Response.json({ session, turn: null }, { status: 201 });
-  }
-
-  // Generate the opening question
-  const aiResponse = await getInterviewerResponse({
-    persona,
-    jobTitle,
-    companyName,
-    descriptionText,
-    turnHistory: [],
-    turnNumber: 0,
-  });
-
-  // Save the interviewer's opening turn
-  const { data: turn, error: turnError } = await supabaseAdmin
-    .from("voice_interview_turns")
-    .insert({
-      session_id: session.id,
-      turn_number: 0,
-      speaker: "interviewer",
-      content: aiResponse.response,
-    })
-    .select("*")
-    .single();
-
-  if (turnError) {
-    return Response.json({ error: "Failed to save interviewer turn." }, { status: 500 });
-  }
-
-  // Update total turns
-  await supabaseAdmin
-    .from("voice_interview_sessions")
-    .update({ total_turns: 1 })
-    .eq("id", session.id);
-
-  return Response.json(
-    {
-      session: { ...session, total_turns: 1 },
-      turn,
-    },
-    { status: 201 }
-  );
+  return Response.json({ session }, { status: 201 });
 }

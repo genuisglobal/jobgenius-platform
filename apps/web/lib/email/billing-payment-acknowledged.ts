@@ -20,7 +20,7 @@ export function billingPaymentAcknowledgedHtml({
           : ""
       }
       <p>You can view your billing status and upcoming installments in your portal.</p>
-      <a href="${portalUrl}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">
+      <a href="${portalUrl}" style="display:inline-block;background:#7c3aed;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">
         View Billing Status
       </a>
       <p style="color:#6b7280;font-size:12px;margin-top:24px;">JobGenius Billing System</p>

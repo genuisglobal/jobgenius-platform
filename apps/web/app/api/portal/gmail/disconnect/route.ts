@@ -31,10 +31,14 @@ export async function POST(request: Request) {
   }
 
   // Clear gmail_address on the seeker profile
-  await supabaseServer
+  const { error: clearGmailError } = await supabaseServer
     .from("job_seekers")
     .update({ gmail_address: null })
     .eq("id", seekerId);
+
+  if (clearGmailError) {
+    console.error("[portal:gmail] failed to clear gmail_address:", clearGmailError);
+  }
 
   return NextResponse.json({ success: true });
 }

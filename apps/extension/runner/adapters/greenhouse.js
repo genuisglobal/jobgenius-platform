@@ -16,7 +16,8 @@
     async clickApplyEntry(ctx) {
       const applyButton = dom.findButtonByText(["apply", "apply now"]);
       if (applyButton) {
-        applyButton.click();
+        if (dom.clickElement) await dom.clickElement(applyButton);
+        else applyButton.click();
         await dom.sleep(1200);
       }
       return { ok: true };
@@ -51,16 +52,15 @@
         submitButton.getAttribute("aria-label") ||
         submitButton.getAttribute("value") ||
         "Continue";
-      submitButton.click();
+      if (dom.clickElement) await dom.clickElement(submitButton);
+      else submitButton.click();
       await dom.sleep(1500);
       return { ok: true, clickedLabel };
     },
     confirm() {
-      const confirmationText = document.body?.innerText?.toLowerCase() ?? "";
-      return (
-        confirmationText.includes("thank you") ||
-        confirmationText.includes("application submitted")
-      );
+      return dom.isConfirmationVisible
+        ? dom.isConfirmationVisible(window.JobGeniusPhrases?.confirmation)
+        : false;
     },
     async runFallback(ctx) {
       await this.clickApplyEntry(ctx);
@@ -74,13 +74,20 @@
         const fillResult = await this.fillKnownFields(ctx);
         if (!fillResult.ok) return { status: "NEEDS_ATTENTION", reason: fillResult.reason };
 
-        const missing = this.extractRequiredFields();
+        let missing = this.extractRequiredFields();
         if (missing.length > 0) {
-          return {
-            status: "NEEDS_ATTENTION",
-            reason: "REQUIRED_FIELDS",
-            missing_fields: missing,
-          };
+          const classifiedCount = await dom.classifyAndFill?.(ctx, missing);
+          if (classifiedCount > 0) {
+            await dom.sleep(400);
+            missing = this.extractRequiredFields();
+          }
+          if (missing.length > 0) {
+            return {
+              status: "NEEDS_ATTENTION",
+              reason: "REQUIRED_FIELDS",
+              missing_fields: missing,
+            };
+          }
         }
 
         const before = dom.captureFlowFingerprint?.() ?? window.location.href;

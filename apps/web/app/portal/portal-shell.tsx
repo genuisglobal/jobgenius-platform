@@ -8,10 +8,13 @@ import LogoutButton from "./logout-button";
 const NAV_ITEMS = [
   { href: "/portal", label: "Dashboard", icon: "home" },
   { href: "/portal/profile", label: "Profile", icon: "user" },
+  { href: "/portal/resumes", label: "Resumes", icon: "academic" },
   { href: "/portal/billing", label: "Billing", icon: "credit-card" },
+  { href: "/portal/agreement", label: "Agreement", icon: "book" },
   { href: "/portal/conversations", label: "Questions & Tasks", icon: "chat" },
   { href: "/portal/references", label: "References", icon: "users" },
   { href: "/portal/applications", label: "Applications", icon: "briefcase" },
+  { href: "/portal/tracker", label: "Live Tracker", icon: "bolt" },
   { href: "/portal/inbox", label: "Inbox", icon: "inbox" },
   { href: "/portal/contacts", label: "Contacts", icon: "contacts" },
   { href: "/portal/availability", label: "Availability", icon: "clock" },
@@ -20,6 +23,7 @@ const NAV_ITEMS = [
   { href: "/portal/learning", label: "Learning", icon: "academic" },
   { href: "/portal/performance", label: "Performance", icon: "trophy" },
   { href: "/portal/progress", label: "Progress", icon: "star" },
+  { href: "/portal/referrals", label: "Referrals", icon: "gift" },
 ];
 
 function NavIcon({ icon, className }: { icon: string; className?: string }) {
@@ -111,6 +115,18 @@ function NavIcon({ icon, className }: { icon: string; className?: string }) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
         </svg>
       );
+    case "gift":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+        </svg>
+      );
+    case "bolt":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -150,9 +166,11 @@ function timeAgo(iso: string): string {
 
 export default function PortalShell({
   userName,
+  showBillingNav,
   children,
 }: {
   userName: string;
+  showBillingNav: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -212,7 +230,7 @@ export default function PortalShell({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ announcement_id: id }),
-    }).catch(() => {});
+    }).catch((err) => console.error("[portal] mark announcement read failed:", err));
   }
 
   return (
@@ -246,7 +264,7 @@ export default function PortalShell({
         </div>
 
         <nav className="p-4 space-y-1">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => showBillingNav || item.href !== "/portal/billing").map((item) => {
             const isActive =
               item.href === "/portal"
                 ? pathname === "/portal"
@@ -258,7 +276,7 @@ export default function PortalShell({
                 onClick={() => setSidebarOpen(false)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
-                    ? "bg-blue-50 text-blue-700"
+                    ? "bg-violet-50 text-violet-700"
                     : "text-gray-700 hover:bg-gray-100"
                 }`}
               >
@@ -349,7 +367,7 @@ export default function PortalShell({
                                   ? "bg-amber-400"
                                   : item.conversation_type === "application_question"
                                   ? "bg-purple-400"
-                                  : "bg-blue-400"
+                                  : "bg-violet-400"
                               }`} />
                               <p className="text-sm font-medium text-gray-900 truncate">{item.subject}</p>
                             </div>
@@ -365,7 +383,7 @@ export default function PortalShell({
                     <Link
                       href="/portal/conversations"
                       onClick={() => setBellOpen(false)}
-                      className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                      className="text-xs font-medium text-violet-600 hover:text-violet-700"
                     >
                       View all conversations →
                     </Link>
@@ -385,7 +403,7 @@ export default function PortalShell({
           {(notifications?.unread_announcements ?? []).map((ann) => (
             <div
               key={ann.id}
-              className="mb-4 bg-blue-600 text-white rounded-xl px-5 py-4 flex items-start justify-between gap-4 shadow-sm"
+              className="mb-4 bg-violet-600 text-white rounded-xl px-5 py-4 flex items-start justify-between gap-4 shadow-sm"
             >
               <div className="flex items-start gap-3 min-w-0">
                 <svg className="w-5 h-5 flex-shrink-0 mt-0.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -393,12 +411,12 @@ export default function PortalShell({
                 </svg>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">{ann.subject}</p>
-                  <p className="text-sm text-blue-100 mt-0.5 whitespace-pre-line">{ann.body}</p>
+                  <p className="text-sm text-violet-100 mt-0.5 whitespace-pre-line">{ann.body}</p>
                 </div>
               </div>
               <button
                 onClick={() => dismissAnnouncement(ann.id)}
-                className="flex-shrink-0 p-1 rounded hover:bg-blue-500 transition-colors"
+                className="flex-shrink-0 p-1 rounded hover:bg-violet-500 transition-colors"
                 aria-label="Dismiss"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
