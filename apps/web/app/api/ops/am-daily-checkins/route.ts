@@ -4,6 +4,7 @@ import { normalizeAMRole } from "@/lib/auth/roles";
 import { enforceOpsRateLimit } from "@/lib/rate-limit-presets";
 import { supabaseAdmin } from "@/lib/auth";
 import { sendNotification, NOTIFICATION_CATEGORIES } from "@/lib/notify";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 
 /** One late-afternoon reminder for AMs who clocked in but have not checked in. */
 export async function POST(request: Request) {
@@ -12,6 +13,15 @@ export async function POST(request: Request) {
   if (!process.env.OPS_API_KEY || request.headers.get("x-ops-key") !== process.env.OPS_API_KEY) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  return run();
+}
+
+export async function GET(request: Request) {
+  if (!isAuthorizedCron(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return run();
+}
+
+async function run() {
   const date = watDate();
   const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
   if (weekday === 0 || weekday === 6) return NextResponse.json({ date, reminded: 0 });
