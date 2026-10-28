@@ -18,6 +18,10 @@ on:
     - cron: "0 14 * * 5"
     # Weekly AM productivity digest — Fridays 16:00 UTC (17:00 WAT, end of day)
     - cron: "0 16 * * 5"
+    # Daily AM check-in reminder — weekdays 15:30 UTC (16:30 WAT)
+    - cron: "30 15 * * 1-5"
+    # AM progress email — weekdays 07:00 UTC (08:00 WAT)
+    - cron: "0 7 * * 1-5"
     # Hourly sweep for shifts left open past 10 hours — nobody is auto-signed out
     - cron: "0 * * * *"
     # Weekly productivity review flags — Fridays 16:30 UTC, after the digest
@@ -174,6 +178,30 @@ jobs:
           OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
         run: |
           curl -fsSL -X POST -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/productivity-digest"
+
+  am-daily-checkins:
+    name: Daily AM Check-in Reminders
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 15 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remind clocked-in AMs who have not completed today's check-in
+        env:
+          WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
+          OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
+        run: |
+          curl -fsSL -X POST -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/am-daily-checkins"
+
+  am-daily-progress:
+    name: Daily AM Progress Emails
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 7 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send each AM a weekly pace and target email
+        env:
+          WEB_BASE_URL: ${{ secrets.WEB_BASE_URL }}
+          OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
+        run: |
+          curl -fsSL -X POST -H "x-ops-key: ${OPS_API_KEY}" "${WEB_BASE_URL}/api/ops/am-daily-progress"
 
   productivity-reviews:
     name: Weekly Productivity Review Flags

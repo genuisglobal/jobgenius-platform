@@ -59,6 +59,9 @@ export const NOTIFICATION_CATEGORIES = {
   attendance_sign_out_reminder: "attendance_sign_out_reminder",
   attendance_sign_out_request: "attendance_sign_out_request",
   productivity_review_flag: "productivity_review_flag",
+  productivity_weekly_drop: "productivity_weekly_drop",
+  am_daily_checkin_reminder: "am_daily_checkin_reminder",
+  am_daily_progress: "am_daily_progress",
 } as const;
 
 export type NotificationCategory =
@@ -93,6 +96,9 @@ export const INTERNAL_OPERATIONS_NOTIFICATION_CATEGORIES = [
   NOTIFICATION_CATEGORIES.attendance_sign_out_reminder,
   NOTIFICATION_CATEGORIES.attendance_sign_out_request,
   NOTIFICATION_CATEGORIES.productivity_review_flag,
+  NOTIFICATION_CATEGORIES.productivity_weekly_drop,
+  NOTIFICATION_CATEGORIES.am_daily_checkin_reminder,
+  NOTIFICATION_CATEGORIES.am_daily_progress,
 ] as const;
 
 export function getNotificationCategoryLabel(category: string): string {
@@ -153,6 +159,12 @@ export function getNotificationCategoryLabel(category: string): string {
       return "Sign-out time to approve";
     case NOTIFICATION_CATEGORIES.productivity_review_flag:
       return "Productivity review flag";
+    case NOTIFICATION_CATEGORIES.productivity_weekly_drop:
+      return "Weekly activity drop";
+    case NOTIFICATION_CATEGORIES.am_daily_checkin_reminder:
+      return "Daily AM check-in";
+    case NOTIFICATION_CATEGORIES.am_daily_progress:
+      return "Daily AM progress";
     default:
       return category
         .replace(/_/g, " ")

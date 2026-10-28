@@ -20,6 +20,7 @@ import {
   coerceCounts,
   getRangeBounds,
   normalizeSheetDate,
+  shiftSheetDate,
   ACTIVITY_METRICS,
   type SheetRow,
 } from "@/lib/activity-sheet";
@@ -39,6 +40,7 @@ import {
 const log = createLogger("productivity-digest");
 
 export const PRODUCTIVITY_DIGEST_CATEGORY = "am_productivity_digest";
+export const PRODUCTIVITY_DROP_CATEGORY = "productivity_weekly_drop";
 
 /**
  * Below this many rated managers, "the team median" is one or two
@@ -78,6 +80,7 @@ function shortDate(date: string): string {
 // ─── Composition ─────────────────────────────────────────────────────────
 
 export type DigestMessage = { subject: string; body: string };
+export type DigestCheckinSummary = { completed: number; sheet_needs_update: number; blockers: number };
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
@@ -90,7 +93,8 @@ function plural(count: number, word: string): string {
 export function composeDigestMessage(
   manager: AmProductivity,
   team: ProductivityTeam,
-  week: DigestWeek
+  week: DigestWeek,
+  checkins?: DigestCheckinSummary
 ): DigestMessage {
   const { funnel, counts } = manager;
 
@@ -143,6 +147,12 @@ export function composeDigestMessage(
     );
   }
 
+  if (checkins) {
+    lines.push(`Daily check-ins: ${checkins.completed} across ${plural(manager.days_on_clock, "day")} on the clock.`);
+    if (checkins.sheet_needs_update > 0) lines.push(`Sheet needs an update: ${checkins.sheet_needs_update} check-in day${checkins.sheet_needs_update === 1 ? "" : "s"}.`);
+    if (checkins.blockers > 0) lines.push(`Blockers reported: ${checkins.blockers} check-in day${checkins.blockers === 1 ? "" : "s"}.`);
+  }
+
   // Data-quality notes last, and only when there is something to say —
   // an AM whose week is clean should not be handed a list of clean bills.
   const notes: string[] = [];
@@ -181,7 +191,16 @@ export type DigestResult = {
   managers: number;
   sent: number;
   skipped: number;
+  manager_alerts: number;
 };
+
+/** A fall in logged applications worth discussing, with enough activity on
+ * both sides to avoid comparing a full week with an absent or unlogged one. */
+export function detectWeeklyActivityDrop(current: AmProductivity, previousApplications: number, previousLoggedDays: number): boolean {
+  const decline = previousApplications - current.funnel.applications;
+  return previousLoggedDays >= 3 && current.days_on_clock >= 3 && previousApplications >= 10
+    && decline >= 5 && current.funnel.applications <= previousApplications * 0.6;
+}
 
 /**
  * Build and send the week's digests. Idempotent: an AM already sent a
@@ -192,16 +211,25 @@ export async function sendWeeklyProductivityDigests(
   week: DigestWeek = getDigestWeek()
 ): Promise<DigestResult> {
   const { start, end } = week;
+  const previousStart = shiftSheetDate(start, -7);
+  const previousEnd = shiftSheetDate(end, -7);
 
   // Imported here rather than at the top so composeDigestMessage and
   // getDigestWeek stay importable without database env vars — the same
   // reason lib/client-reports.ts does it.
   const { supabaseServer: supabaseAdmin } = await import("@/lib/supabase/server");
   const { sendNotification } = await import("@/lib/notify");
+  const { isPeopleManagerRole, normalizeAMRole } = await import("@/lib/auth/roles");
+  const { loadAmDeliveryData } = await import("@/lib/am-delivery-server");
+  const { composeFridayDeliveryEmail, summarizeDelivery } = await import("@/lib/am-weekly-delivery");
 
   const [
     { data: entries, error: entriesError },
     { data: days, error: daysError },
+    { data: previousEntries, error: previousError },
+    { data: staff, error: staffError },
+    { data: checkins, error: checkinError },
+    delivery,
   ] = await Promise.all([
     supabaseAdmin
       .from("activity_sheet_entries")
@@ -213,11 +241,19 @@ export async function sendWeeklyProductivityDigests(
       .select("id, account_manager_id, work_date, signed_in_at, signed_out_at, adjusted_at")
       .gte("work_date", start)
       .lte("work_date", end),
+    supabaseAdmin.from("activity_sheet_entries")
+      .select("entry_date, account_manager_id, easy_applications, company_applications")
+      .gte("entry_date", previousStart).lte("entry_date", previousEnd),
+    supabaseAdmin.from("account_managers").select("id, name, email, role, status"),
+    supabaseAdmin.from("am_daily_checkins")
+      .select("account_manager_id, work_date, sheet_status, blocker_kind")
+      .gte("work_date", start).lte("work_date", end),
+    loadAmDeliveryData(start, end, previousStart, previousEnd),
   ]);
 
-  if (entriesError || daysError) {
+  if (entriesError || daysError || previousError || staffError || checkinError) {
     log.error("digest source query failed", {
-      error: (entriesError ?? daysError)?.message,
+      error: (entriesError ?? daysError ?? previousError ?? staffError ?? checkinError)?.message,
     });
     throw new Error("Failed to load productivity data for the digest.");
   }
@@ -287,10 +323,6 @@ export async function sendWeeklyProductivityDigests(
 
   const { managers, team } = buildProductivity(rows, shifts, new Date());
 
-  if (managers.length === 0) {
-    return { week_start: start, week_end: end, managers: 0, sent: 0, skipped: 0 };
-  }
-
   // Already-sent guard, one query rather than one per manager.
   const { data: already } = await supabaseAdmin
     .from("notifications")
@@ -303,16 +335,31 @@ export async function sendWeeklyProductivityDigests(
 
   let sent = 0;
   let skipped = 0;
+  let managerAlerts = 0;
 
-  for (const manager of managers) {
-    if (alreadySent.has(manager.account_manager_id)) {
+  const reportById = new Map(managers.map((manager) => [manager.account_manager_id, manager]));
+  const amRecipients = (staff ?? []).filter((person) => normalizeAMRole(person.role as string | null) === "am" && person.status === "approved");
+  for (const person of amRecipients) {
+    const accountManagerId = person.id as string;
+    if (alreadySent.has(accountManagerId)) {
       skipped += 1;
       continue;
     }
-
-    const { subject, body } = composeDigestMessage(manager, team, week);
+    const manager = reportById.get(accountManagerId);
+    const ownCheckins = (checkins ?? []).filter((row) => row.account_manager_id === accountManagerId);
+    const currentDelivery = summarizeDelivery(accountManagerId, start, delivery.assignments, delivery.current);
+    const previousDelivery = summarizeDelivery(accountManagerId, previousStart, delivery.assignments, delivery.previous);
+    const name = (person.name as string | null)?.trim() || (person.email as string).split("@")[0];
+    const weekly = composeFridayDeliveryEmail(name, currentDelivery, previousDelivery);
+    const productivity = manager ? composeDigestMessage(manager, team, week, {
+      completed: ownCheckins.length,
+      sheet_needs_update: ownCheckins.filter((row) => row.sheet_status === "needs_update").length,
+      blockers: ownCheckins.filter((row) => row.blocker_kind !== "none").length,
+    }) : null;
+    const subject = weekly.subject;
+    const body = productivity ? `${weekly.body}\n\nYour measured productivity details:\n${productivity.body}` : `${weekly.body}\n\nNo measured attendance or sheet activity was available for your productivity rate this week.`;
     const result = await sendNotification({
-      userId: manager.account_manager_id,
+      userId: accountManagerId,
       userType: "am",
       category: PRODUCTIVITY_DIGEST_CATEGORY,
       subject,
@@ -323,9 +370,9 @@ export async function sendWeeklyProductivityDigests(
       payload: {
         week_start: start,
         week_end: end,
-        measured_hours: manager.measured_hours,
-        score_per_hour: manager.rates?.score_per_hour ?? null,
-        pace: manager.pace,
+        measured_hours: manager?.measured_hours ?? null,
+        score_per_hour: manager?.rates?.score_per_hour ?? null,
+        pace: manager?.pace ?? "unrated",
       },
     });
 
@@ -333,13 +380,68 @@ export async function sendWeeklyProductivityDigests(
     else skipped += 1;
   }
 
-  log.info("weekly digests processed", { week_start: start, sent, skipped });
+  // The private AM digest is also the source for an earlier manager signal.
+  // This reports a fall in *logged* activity, not a performance verdict.
+  // The separate three-week review still handles sustained pace concerns.
+  if (new Date(`${end}T00:00:00Z`).getUTCDay() === 5) {
+    const previousByAm = new Map<string, { applications: number; dates: Set<string> }>();
+    for (const entry of previousEntries ?? []) {
+      const id = entry.account_manager_id as string;
+      const group = previousByAm.get(id) ?? { applications: 0, dates: new Set<string>() };
+      group.applications += Number(entry.easy_applications ?? 0) + Number(entry.company_applications ?? 0);
+      group.dates.add(entry.entry_date as string);
+      previousByAm.set(id, group);
+    }
+    const staffById = new Map((staff ?? []).map((person) => [person.id as string, person]));
+    const recipients = (staff ?? []).filter((person) => person.status === "approved" && isPeopleManagerRole(person.role as string | null));
+    const { data: existingDrops, error: existingDropsError } = await supabaseAdmin.from("notifications")
+      .select("user_id, payload")
+      .eq("category", PRODUCTIVITY_DROP_CATEGORY).eq("payload->>week_start", start);
+    if (existingDropsError) throw new Error("Could not check existing manager alerts.");
+    const alerted = new Set((existingDrops ?? []).map((row) => `${row.user_id}:${(row.payload as Record<string, unknown> | null)?.account_manager_id ?? ""}`));
+
+    for (const manager of managers) {
+      const staffMember = staffById.get(manager.account_manager_id);
+      if (!staffMember || normalizeAMRole(staffMember.role as string | null) !== "am") continue;
+      const previous = previousByAm.get(manager.account_manager_id);
+      if (!previous || !detectWeeklyActivityDrop(manager, previous.applications, previous.dates.size)) continue;
+      const ownCheckins = (checkins ?? []).filter((row) => row.account_manager_id === manager.account_manager_id);
+      const incomplete = ownCheckins.filter((row) => row.sheet_status === "needs_update").length;
+      const blockers = ownCheckins.filter((row) => row.blocker_kind !== "none").length;
+      const name = (staffMember?.name as string | null)?.trim() || (staffMember?.email as string | null) || "An account manager";
+      const currentDelivery = summarizeDelivery(manager.account_manager_id, start, delivery.assignments, delivery.current);
+      const body = [
+        `${name}'s logged applications fell from ${previous.applications} last week to ${manager.funnel.applications} this week (${start} to ${end}).`,
+        `Other sheet totals this week: ${manager.funnel.follow_ups} follow-ups, ${manager.funnel.interviews} interviews, ${manager.funnel.offers} offers.`,
+        `Full-week client coverage: ${currentDelivery.clientsAtMinimum}/${currentDelivery.clients.length} reached 30 applications; ${currentDelivery.clientsWithPhoneInterview}/${currentDelivery.clients.length} had a phone interview; ${currentDelivery.clientsWithInterview}/${currentDelivery.clients.length} had an interview of any type.`,
+        `Attendance: ${manager.days_on_clock} days on the clock; ${manager.idle_days} days on the clock with no sheet activity.`,
+        `Daily check-ins: ${ownCheckins.length}; ${incomplete} marked the sheet as needing an update; ${blockers} reported a blocker.`,
+        "",
+        "Please check the sheet and ask about workload, client circumstances, leave, and missing entries before drawing a conclusion. This alert creates no employment action.",
+      ].join("\n");
+      for (const recipient of recipients) {
+        const key = `${recipient.id}:${manager.account_manager_id}`;
+        if (alerted.has(key)) continue;
+        const result = await sendNotification({
+          userId: recipient.id as string, userType: "am", category: PRODUCTIVITY_DROP_CATEGORY,
+          subject: `Weekly activity drop to review: ${name}`, body,
+          linkUrl: `/dashboard/productivity?start=${start}&end=${end}`, channel: "both",
+          payload: { week_start: start, week_end: end, account_manager_id: manager.account_manager_id,
+            previous_applications: previous.applications, applications: manager.funnel.applications },
+        });
+        if (result.id) { managerAlerts += 1; alerted.add(key); }
+      }
+    }
+  }
+
+  log.info("weekly digests processed", { week_start: start, sent, skipped, manager_alerts: managerAlerts });
 
   return {
     week_start: start,
     week_end: end,
-    managers: managers.length,
+    managers: amRecipients.length,
     sent,
     skipped,
+    manager_alerts: managerAlerts,
   };
 }

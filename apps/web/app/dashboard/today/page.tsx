@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, supabaseAdmin } from "@/lib/auth";
 import TodayClient, { type AmTaskRow } from "./TodayClient";
+import DailyCheckin from "./DailyCheckin";
+import { normalizeAMRole } from "@/lib/auth/roles";
 
 export default async function TodayPage() {
   const user = await getCurrentUser();
@@ -27,6 +29,7 @@ export default async function TodayPage() {
           payslip signatures, outreach replies, and upcoming interviews.
         </p>
       </div>
+      {normalizeAMRole(user.role) === "am" && <DailyCheckin />}
       <TodayClient initialTasks={tasks} amName={user.name ?? user.email} />
     </div>
   );

@@ -183,4 +183,18 @@ describe("composeDigestMessage", () => {
       "Conversion:"
     );
   });
+
+  it("includes structured check-in context without disclosing the optional distraction answer", () => {
+    const { managers, team: totals } = buildProductivity(
+      [row("a", "2026-08-10", { easy_applications: 8 })],
+      [shift("a", "2026-08-10", 8)], NOW
+    );
+    const body = composeDigestMessage(managers[0], totals, WEEK, {
+      completed: 1, sheet_needs_update: 1, blockers: 1,
+    }).body;
+    expect(body).toContain("Daily check-ins: 1 across 1 day on the clock");
+    expect(body).toContain("Sheet needs an update: 1 check-in day");
+    expect(body).toContain("Blockers reported: 1 check-in day");
+    expect(body).not.toContain("social media");
+  });
 });
