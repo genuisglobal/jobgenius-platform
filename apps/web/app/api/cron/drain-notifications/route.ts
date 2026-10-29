@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/auth";
 import { resolveRecipientEmail } from "@/lib/notify";
 import { sendAndLogEmail } from "@/lib/messaging/send-and-log";
 import { createLogger } from "@/lib/logger";
+import { amProgressNotificationHtml } from "@/lib/email-templates/am-progress-notification";
 
 const log = createLogger("cron.drain-notifications");
 const BATCH_LIMIT = 20;
@@ -91,11 +92,9 @@ export async function GET(request: Request) {
     const result = await sendAndLogEmail({
       to: recipient,
       subject: row.subject ?? "JobGenius update",
-      html: htmlBodyFor(
-        row.subject ?? "JobGenius update",
-        (row.body as string | null) ?? null,
-        (row.link_url as string | null) ?? null
-      ),
+      html: row.category === "am_daily_progress" || row.category === "am_productivity_digest"
+        ? amProgressNotificationHtml(row.subject ?? "JobGenius update", (row.body as string | null) ?? "", (row.link_url as string | null) ?? null, row.category === "am_productivity_digest")
+        : htmlBodyFor(row.subject ?? "JobGenius update", (row.body as string | null) ?? null, (row.link_url as string | null) ?? null),
       text: (row.body as string | null) ?? row.subject ?? "JobGenius update",
       template_key: `notify:${row.category}`,
       meta: { notification_id: row.id, category: row.category },
