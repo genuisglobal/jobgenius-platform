@@ -6,6 +6,8 @@ import { getRangeBounds, shiftSheetDate } from "@/lib/activity-sheet";
 import { watDate } from "@/lib/attendance";
 import { loadAmDeliveryData } from "@/lib/am-delivery-server";
 import { buildAchievementRows, buildAchievements, type AchievementKind } from "@/lib/weekly-achievements";
+import { CONTRIBUTION_LABELS, type ContributionType } from "@/lib/peer-recognition";
+import PeerRecognitionClient, { type RecognitionView } from "./PeerRecognitionClient";
 
 export const dynamic = "force-dynamic";
 
@@ -34,13 +36,15 @@ export default async function AchievementsPage({ searchParams }: PageProps) {
   const weekStart = selectedWeek(searchParams?.week, today);
   const friday = shiftSheetDate(weekStart, 4);
   const previousStart = shiftSheetDate(weekStart, -21);
-  const [{ data: staff, error: staffError }, { data: exemptions, error: leaveError }, { data: checkins, error: checkinError }, delivery] = await Promise.all([
+  const [{ data: staff, error: staffError }, { data: exemptions, error: leaveError }, { data: checkins, error: checkinError }, { data: recognitionRows, error: recognitionError }, delivery] = await Promise.all([
     supabaseAdmin.from("account_managers").select("id, name, email, role, status").eq("status", "approved"),
     supabaseAdmin.from("attendance_exemptions").select("account_manager_id").lte("start_date", friday).gte("end_date", weekStart),
     supabaseAdmin.from("am_daily_checkins").select("account_manager_id, sheet_status").gte("work_date", weekStart).lte("work_date", friday),
+    supabaseAdmin.from("am_peer_recognitions").select("id, nominator_am_id, nominee_am_id, contribution_type, detail, status").eq("week_start", weekStart).order("created_at"),
     loadAmDeliveryData(weekStart, friday, previousStart, shiftSheetDate(weekStart, -3)),
   ]);
-  if (staffError || leaveError || checkinError) throw new Error("Could not load Friday achievements.");
+  const recognitionTablePending = recognitionError?.code === "42P01" || recognitionError?.code === "PGRST205";
+  if (staffError || leaveError || checkinError || (recognitionError && !recognitionTablePending)) throw new Error("Could not load Friday achievements.");
   const managers = (staff ?? []).filter((person) => normalizeAMRole(person.role as string | null) === "am")
     .map((person) => ({ id: person.id as string, name: (person.name as string | null)?.trim() || (person.email as string).split("@")[0] }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -48,6 +52,17 @@ export default async function AchievementsPage({ searchParams }: PageProps) {
     new Set((exemptions ?? []).map((row) => row.account_manager_id as string)),
     new Set((checkins ?? []).filter((row) => row.sheet_status === "needs_update").map((row) => row.account_manager_id as string)));
   const achievements = buildAchievements(rows, today >= friday);
+  const nameById = new Map((staff ?? []).map((person) => [person.id as string, (person.name as string | null)?.trim() || (person.email as string).split("@")[0]]));
+  const recognitions: RecognitionView[] = (recognitionRows ?? []).filter((item) => item.contribution_type in CONTRIBUTION_LABELS).map((item) => ({
+    id: item.id as string, nomineeName: nameById.get(item.nominee_am_id as string) ?? "AM",
+    nominatorName: nameById.get(item.nominator_am_id as string) ?? "AM",
+    contributionType: item.contribution_type as ContributionType, detail: item.detail as string,
+    status: item.status as RecognitionView["status"],
+  }));
+  const ownRecognitionIds = new Set((recognitionRows ?? []).filter((item) => item.nominator_am_id === user.id).map((item) => item.id as string));
+  const ownRecognitions = recognitions.filter((item) => ownRecognitionIds.has(item.id));
+  const pendingRecognitions = canViewTeamTrends ? recognitions.filter((item) => item.status === "pending") : [];
+  const approvedRecognitions = today >= friday ? recognitions.filter((item) => item.status === "approved") : [];
   const selectedId = canViewTeamTrends && rows.some((row) => row.manager.id === searchParams?.am) ? searchParams?.am : user.id;
   const own = rows.find((row) => row.manager.id === selectedId);
   const eligibleClients = rows.reduce((sum, row) => sum + (row.hasLeave ? 0 : row.current.clients.length), 0);
@@ -87,6 +102,9 @@ export default async function AchievementsPage({ searchParams }: PageProps) {
         : <div className="mt-4 grid gap-3 md:grid-cols-2">{achievements.map((item) => <div key={`${item.accountManagerId}:${item.kind}`} className="rounded-lg border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-amber-800">{LABELS[item.kind]}</p><p className="mt-1 font-semibold text-gray-900">{item.name}</p><p className="mt-1 text-sm text-gray-700">{item.detail}</p></div>)}</div>}
       <p className="mt-4 text-xs text-gray-500">Leave and a check-in marked “sheet needs update” pause recognition for that AM. Interview outcomes depend on hiring timelines; these achievements are for celebration, not employment decisions.</p>
     </section>
+    {recognitionTablePending ? <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Peer recognition is being set up. The other Friday achievements remain available.</p> : <PeerRecognitionClient candidates={managers.filter((manager) => manager.id !== user.id)} own={ownRecognitions}
+      approved={approvedRecognitions} pending={pendingRecognitions} canReview={canViewTeamTrends}
+      canNominate={normalizeAMRole(user.role) === "am" && weekStart === getRangeBounds(today, "week").start && ownRecognitions.length < 2} />}
     <section className="rounded-xl border border-gray-200 bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-gray-900">Private weekly trend</h2><p className="mt-1 text-xs text-gray-500">Visible only to you and people managers. Compare your own weeks, with client load shown.</p></div>
         {canViewTeamTrends && <form method="get" className="flex gap-2"><input type="hidden" name="week" value={weekStart}/><select aria-label="Account manager" name="am" defaultValue={selectedId} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">{rows.map((row) => <option key={row.manager.id} value={row.manager.id}>{row.manager.name}</option>)}</select><button className="rounded-lg bg-purple-700 px-3 py-2 text-sm font-medium text-white">View</button></form>}</div>
