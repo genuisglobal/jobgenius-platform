@@ -157,6 +157,7 @@ const PEOPLE_NAV_SECTION: NavSection = {
   title: "People Ops",
   items: [
     { href: "/dashboard/people", label: "People Overview", icon: "users-all", exact: true },
+    { href: "/dashboard/people/recognition-pilot", label: "Recognition Pilot", icon: "chart" },
     { href: "/dashboard/admin/am-email-preview", label: "AM Email Preview", icon: "mail" },
     { href: "/dashboard/people/employees", label: "Employees", icon: "users" },
     { href: "/dashboard/people/onboarding", label: "Onboarding Queue", icon: "queue" },
