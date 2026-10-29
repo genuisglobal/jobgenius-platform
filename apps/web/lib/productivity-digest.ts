@@ -202,6 +202,49 @@ export function detectWeeklyActivityDrop(current: AmProductivity, previousApplic
     && decline >= 5 && current.funnel.applications <= previousApplications * 0.6;
 }
 
+/** Read-only version of the measured section appended to a Friday AM email. */
+export async function previewMeasuredProductivity(accountManagerId: string, week: DigestWeek): Promise<DigestMessage | null> {
+  const { supabaseServer } = await import("@/lib/supabase/server");
+  const [entriesResult, daysResult, checkinsResult] = await Promise.all([
+    supabaseServer.from("activity_sheet_entries").select(ENTRY_COLUMNS).gte("entry_date", week.start).lte("entry_date", week.end),
+    supabaseServer.from("attendance_days").select("id, account_manager_id, work_date, signed_in_at, signed_out_at, adjusted_at").gte("work_date", week.start).lte("work_date", week.end),
+    supabaseServer.from("am_daily_checkins").select("account_manager_id, sheet_status, blocker_kind").eq("account_manager_id", accountManagerId).gte("work_date", week.start).lte("work_date", week.end),
+  ]);
+  if (entriesResult.error || daysResult.error || checkinsResult.error) throw new Error("Could not load measured productivity preview.");
+  const days = daysResult.data ?? [];
+  const ids = days.map((day) => day.id as string);
+  const breaksResult = ids.length
+    ? await supabaseServer.from("attendance_breaks").select("attendance_day_id, started_at, ended_at").in("attendance_day_id", ids)
+    : { data: [], error: null };
+  if (breaksResult.error) throw new Error("Could not load breaks for productivity preview.");
+  const breaksByDay = new Map<string, ShiftRow["breaks"]>();
+  for (const entry of breaksResult.data ?? []) {
+    const id = entry.attendance_day_id as string;
+    const list = breaksByDay.get(id) ?? [];
+    list.push({ id: `${id}:${entry.started_at as string}`, started_at: entry.started_at as string, ended_at: (entry.ended_at as string | null) ?? null });
+    breaksByDay.set(id, list);
+  }
+  const rows: SheetRow[] = ((entriesResult.data ?? []) as unknown as Record<string, unknown>[]).map((entry) => ({
+    id: null, entry_date: entry.entry_date as string, job_seeker_id: entry.job_seeker_id as string,
+    account_manager_id: entry.account_manager_id as string, seeker_name: "", am_name: "", note: null, updated_at: null,
+    ...coerceCounts(entry),
+  }));
+  const shifts: ShiftRow[] = await attachActivity(supabaseServer, days.map((day) => ({
+    id: day.id as string, account_manager_id: day.account_manager_id as string, am_name: "", work_date: day.work_date as string,
+    signed_in_at: day.signed_in_at as string, signed_out_at: (day.signed_out_at as string | null) ?? null,
+    adjusted_at: (day.adjusted_at as string | null) ?? null, breaks: breaksByDay.get(day.id as string) ?? [],
+  })), new Date());
+  const { managers, team } = buildProductivity(rows, shifts, new Date());
+  const manager = managers.find((item) => item.account_manager_id === accountManagerId);
+  if (!manager) return null;
+  const checkins = checkinsResult.data ?? [];
+  return composeDigestMessage(manager, team, week, {
+    completed: checkins.length,
+    sheet_needs_update: checkins.filter((row) => row.sheet_status === "needs_update").length,
+    blockers: checkins.filter((row) => row.blocker_kind !== "none").length,
+  });
+}
+
 /**
  * Build and send the week's digests. Idempotent: an AM already sent a
  * digest for this week_start is skipped, so a re-run (or a workflow
