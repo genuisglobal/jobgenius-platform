@@ -84,6 +84,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     title: "Reporting",
     items: [
       { href: "/dashboard/weekly-review", label: "Friday Seeker Review", icon: "calendar" },
+    { href: "/dashboard/achievements", label: "Friday Achievements", icon: "chart" },
       { href: "/dashboard/activity-sheet", label: "Activity Sheet", icon: "chart" },
       { href: "/dashboard/attendance", label: "Attendance", icon: "clock" },
       { href: "/dashboard/productivity", label: "Productivity", icon: "chart" },

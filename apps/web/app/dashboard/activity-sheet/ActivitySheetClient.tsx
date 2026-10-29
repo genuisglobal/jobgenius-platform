@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   ACTIVITY_METRICS,
   ACTIVITY_METRIC_LABELS,
@@ -64,8 +65,6 @@ const RANGE_LABELS: Record<SheetRange, string> = {
   month: "This month",
 };
 
-const MEDALS = ["🥇", "🥈", "🥉"];
-
 /**
  * The leaderboard collapses the three interview types into one figure.
  * Nine numeric columns is a spreadsheet, not a scoreboard — the type
@@ -82,11 +81,6 @@ const LEADERBOARD_COLUMNS: Array<{
   { key: "interviews", label: "Interviews", value: (e) => e.interviews },
   { key: "offers", label: "Offers", value: (e) => e.counts.offers },
 ];
-
-/** "Easy Apply 1 · Company 1.5 · … · Offer 100" — the rules, stated plainly. */
-const POINTS_LEGEND = ACTIVITY_METRICS.map(
-  (metric) => `${ACTIVITY_METRIC_LABELS[metric]} ${METRIC_POINTS[metric]}`
-).join(" · ");
 
 export default function ActivitySheetClient({
   initialDate,
@@ -315,15 +309,15 @@ export default function ActivitySheetClient({
         </div>
       )}
 
-      {/* ── Leaderboard ────────────────────────────────────────────── */}
+      {/* Team totals are visible here; recognition and private trends live in Friday achievements. */}
       <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-gray-200">
           <div>
-            <h2 className="font-semibold text-gray-900">Leaderboard</h2>
+            <h2 className="font-semibold text-gray-900">Team activity</h2>
             <p className="text-xs text-gray-500">
-              Ranked by score.{data && ` ${data.range_start} → ${data.range_end}`}
+              Logged work by AM, shown alphabetically.{data && ` ${data.range_start} → ${data.range_end}`}
             </p>
-            <p className="text-xs text-gray-400 mt-0.5">{POINTS_LEGEND}</p>
+            <Link href="/dashboard/achievements" className="mt-1 inline-block text-xs font-medium text-violet-700 hover:underline">Friday achievements and my trend →</Link>
           </div>
           <div className="flex gap-1">
             {(["day", "week", "month"] as SheetRange[]).map((option) => (
@@ -353,7 +347,6 @@ export default function ActivitySheetClient({
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                 <tr>
-                  <th className="px-4 py-2 text-left font-semibold w-12">#</th>
                   <th className="px-4 py-2 text-left font-semibold">Account Manager</th>
                   {LEADERBOARD_COLUMNS.map((column) => (
                     <th key={column.key} className="px-3 py-2 text-right font-semibold">
@@ -362,20 +355,16 @@ export default function ActivitySheetClient({
                   ))}
                   <th className="px-3 py-2 text-right font-semibold">Clients</th>
                   <th className="px-3 py-2 text-right font-semibold">Total</th>
-                  <th className="px-4 py-2 text-right font-semibold text-violet-700">Score</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {data?.leaderboard.map((entry, index) => {
-                  const isMe = entry.account_manager_id === data.my_account_manager_id;
+                {[...(data?.leaderboard ?? [])].sort((a, b) => a.am_name.localeCompare(b.am_name)).map((entry) => {
+                  const isMe = entry.account_manager_id === data?.my_account_manager_id;
                   return (
                     <tr
                       key={entry.account_manager_id}
                       className={isMe ? "bg-violet-50" : undefined}
                     >
-                      <td className="px-4 py-2 text-gray-500">
-                        {MEDALS[index] ?? index + 1}
-                      </td>
                       <td className="px-4 py-2 font-medium text-gray-900">
                         {entry.am_name}
                         {isMe && (
@@ -402,9 +391,6 @@ export default function ActivitySheetClient({
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-gray-600">
                         {entry.total}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums font-bold text-violet-700">
-                        {formatScore(entry.score)}
                       </td>
                     </tr>
                   );
