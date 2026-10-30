@@ -22,7 +22,7 @@ export function buildAchievements(rows: AchievementRow[], isCompleteWeek: boolea
     const { current, manager } = row;
     if (row.hasLeave || row.sheetNeedsUpdate || current.clients.length === 0) continue;
     const add = (kind: AchievementKind, detail: string) => achievements.push({ accountManagerId: manager.id, name: manager.name, kind, detail });
-    if (current.clientsAtMinimum === current.clients.length) add("client_coverage", `${current.clientsAtMinimum} of ${current.clients.length} clients reached 30 applications`);
+    if (current.clientsAtTarget === current.clients.length) add("client_coverage", `${current.clientsAtTarget} of ${current.clients.length} clients reached the 50-application target`);
     if (current.clientsWithPhoneInterview === current.clients.length) add("phone_interviews", `${current.clientsWithPhoneInterview} of ${current.clients.length} clients had a phone interview`);
     if (current.interviews > 0 || current.offers > 0) add("outcomes", `${current.phoneInterviews} phone interviews · ${current.interviews} interviews · ${current.offers} offers`);
     const previousRates = row.prior.map((week) => week.clients.length ? week.eligibleApplications / week.clients.length : null);

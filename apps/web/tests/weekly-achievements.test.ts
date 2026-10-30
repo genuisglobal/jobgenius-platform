@@ -10,13 +10,21 @@ function row(client: string, date: string, applications: number, phone = 0): Del
 }
 
 describe("Friday achievements", () => {
-  it("recognizes coverage and outcomes without publishing a rank", () => {
+  it("does not recognize the tolerated minimum as client coverage", () => {
     const entries = [row("a", "2026-10-26", 30, 1), row("b", "2026-10-26", 30, 1)];
     const rows = buildAchievementRows(managers, assignments, entries, "2026-10-26", new Set(), new Set());
     expect(buildAchievements(rows, false)).toEqual([]);
     const awards = buildAchievements(rows, true);
-    expect(awards.map((award) => award.kind)).toEqual(["client_coverage", "phone_interviews", "outcomes"]);
+    expect(awards.map((award) => award.kind)).toEqual(["phone_interviews", "outcomes"]);
     expect(awards.some((award) => "rank" in award || "score" in award)).toBe(false);
+  });
+
+  it("recognizes coverage only when every full-week client reaches 50 applications", () => {
+    const entries = [row("a", "2026-10-26", 50), row("b", "2026-10-26", 50)];
+    const rows = buildAchievementRows(managers, assignments, entries, "2026-10-26", new Set(), new Set());
+    expect(buildAchievements(rows, true)).toContainEqual(expect.objectContaining({
+      kind: "client_coverage", detail: "2 of 2 clients reached the 50-application target",
+    }));
   });
 
   it("pauses recognition when leave or a sheet correction makes comparison unreliable", () => {

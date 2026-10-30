@@ -89,11 +89,11 @@ export default async function AchievementsPage({ searchParams }: PageProps) {
     </div>
     <section className="rounded-xl border border-purple-200 bg-purple-50 p-5">
       <h2 className="font-semibold text-purple-950">Team client progress</h2>
-      <p className="mt-1 text-xs text-purple-800">Full-week clients only; clients assigned during the week and AMs with recorded leave are excluded from this goal.</p>
+      <p className="mt-1 text-xs text-purple-800">Full-week clients only; clients assigned during the week and AMs with recorded leave are excluded from this goal. 30 applications is the tolerated minimum; recognition begins at the 50-application target.</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {[["30 application minimum", atMinimum], ["50 application target", atTarget], ["Phone interview", withPhone]].map(([label, count]) => <div key={label} className="rounded-lg bg-white p-4"><p className="text-sm text-gray-600">{label}</p><p className="mt-1 text-2xl font-bold text-purple-900">{count} / {eligibleClients}</p></div>)}
       </div>
-      {today >= friday && eligibleClients > 0 && atMinimum === eligibleClients && withPhone === eligibleClients && <p className="mt-4 rounded-lg bg-white p-3 text-sm font-semibold text-purple-900">Team milestone: every eligible client reached 30 applications and had a phone interview.</p>}
+      {today >= friday && eligibleClients > 0 && atTarget === eligibleClients && withPhone === eligibleClients && <p className="mt-4 rounded-lg bg-white p-3 text-sm font-semibold text-purple-900">Team milestone: every eligible client reached the 50-application target and had a phone interview.</p>}
     </section>
     <section className="rounded-xl border border-gray-200 bg-white p-5">
       <h2 className="font-semibold text-gray-900">Shared recognition</h2>
