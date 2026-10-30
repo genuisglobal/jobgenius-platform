@@ -123,6 +123,7 @@ const ADMIN_NAV_SECTION: NavSection = {
     { href: "/dashboard/admin/intake", label: "Intake Queue", icon: "queue" },
     { href: "/dashboard/admin/capacity", label: "AM Capacity", icon: "chart" },
     { href: "/dashboard/admin/assignments", label: "Assignments", icon: "link" },
+    { href: "/dashboard/admin/client-roster", label: "Client Roster Audit", icon: "check" },
     { href: "/dashboard/admin/broadcast", label: "Broadcast", icon: "megaphone" },
     { href: "/dashboard/admin/analytics", label: "Analytics", icon: "analytics" },
     { href: "/dashboard/admin/outcomes", label: "Outcomes", icon: "analytics" },

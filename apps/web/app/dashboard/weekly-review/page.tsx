@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, supabaseAdmin } from "@/lib/auth";
-import { isPeopleManagerRole, normalizeAMRole } from "@/lib/auth/roles";
+import { isAdminRole, isPeopleManagerRole, normalizeAMRole } from "@/lib/auth/roles";
 import { ACTIVITY_METRICS, coerceCounts, getRangeBounds, shiftSheetDate, sumCounts } from "@/lib/activity-sheet";
 import { buildWeeklyReview, type WeeklyReviewEntry } from "@/lib/weekly-seeker-review";
 import WeeklyReviewClient from "./WeeklyReviewClient";
@@ -115,7 +115,7 @@ export default async function WeeklyReviewPage({ searchParams }: PageProps) {
           <p className="mt-1 text-xs text-gray-500">Assigned seekers in intake are shown with their status so they can be distinguished from active clients.</p>
           <p className="mt-1 text-xs text-gray-500">Counts come from the team activity sheet. Gaps can mean work was not logged.</p>
         </div>
-        <Link href={`/dashboard/activity-sheet?date=${weekEnd}&range=week`} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Open activity sheet</Link>
+        <div className="flex flex-wrap gap-2">{isAdminRole(user.role) && <Link href="/dashboard/admin/client-roster" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Audit client roster</Link>}<Link href={`/dashboard/activity-sheet?date=${weekEnd}&range=week`} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Open activity sheet</Link></div>
       </div>
       <WeeklyReviewClient weekStart={weekStart} weekEnd={weekEnd} rows={rows} totals={totals} showOwner={canViewTeam} />
     </div>
