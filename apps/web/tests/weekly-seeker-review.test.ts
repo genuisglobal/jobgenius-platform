@@ -25,4 +25,19 @@ describe("weekly seeker review", () => {
     expect(row.prompts).toContain("Review interview outcomes and the next preparation step.");
     expect(row.notes).toEqual([{ date: "2026-10-19", text: "Resume updated" }]);
   });
+
+  it("groups daily work and keeps four weekly snapshots for one seeker", () => {
+    const [row] = buildWeeklyReview(seeker, [
+      entry("2026-10-26", { easy_applications: 3, note: "Updated resume" }),
+      entry("2026-10-26", { company_applications: 2, phone_interviews: 1 }),
+    ], [entry("2026-10-19", { easy_applications: 7 })], "2026-10-26", [
+      entry("2026-10-12", { company_applications: 4 }),
+      entry("2026-10-05", { follow_ups: 2 }),
+    ]);
+    expect(row.days).toEqual([{ date: "2026-10-26", counts: expect.objectContaining({ easy_applications: 3, company_applications: 2, phone_interviews: 1 }), notes: ["Updated resume"] }]);
+    expect(row.weeks.map((week) => [week.start, week.counts.easy_applications + week.counts.company_applications])).toEqual([
+      ["2026-10-26", 5], ["2026-10-19", 7], ["2026-10-12", 4], ["2026-10-05", 0],
+    ]);
+    expect(row.weeks[3].counts.follow_ups).toBe(2);
+  });
 });

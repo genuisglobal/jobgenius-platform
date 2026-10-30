@@ -57,12 +57,13 @@ export default async function WeeklyReviewPage({ searchParams }: PageProps) {
   const weekEnd = shiftSheetDate(weekStart, 6);
   const previousStart = shiftSheetDate(weekStart, -7);
   const previousEnd = shiftSheetDate(weekStart, -1);
+  const historyStart = shiftSheetDate(weekStart, -21);
   const canViewTeam = isPeopleManagerRole(user.role);
 
   const [{ data: activeStates, error: stateError }, { data: assignments, error: assignmentError }, entries] = await Promise.all([
     supabaseAdmin.from("job_seeker_intake_states").select("job_seeker_id").eq("status", "active_client"),
     supabaseAdmin.from("job_seeker_assignments").select("job_seeker_id, account_manager_id"),
-    listEntries(previousStart, weekEnd),
+    listEntries(historyStart, weekEnd),
   ]);
   if (stateError || assignmentError) throw new Error("Unable to load active job seekers for the weekly review.");
 
@@ -97,7 +98,9 @@ export default async function WeeklyReviewPage({ searchParams }: PageProps) {
       };
     }),
     entries.filter((entry) => visibleIds.has(entry.job_seeker_id) && entry.entry_date >= weekStart),
-    entries.filter((entry) => visibleIds.has(entry.job_seeker_id) && entry.entry_date <= previousEnd)
+    entries.filter((entry) => visibleIds.has(entry.job_seeker_id) && entry.entry_date >= previousStart && entry.entry_date <= previousEnd),
+    weekStart,
+    entries.filter((entry) => visibleIds.has(entry.job_seeker_id) && entry.entry_date < previousStart)
   ).sort((a, b) => b.prompts.length - a.prompts.length || a.name.localeCompare(b.name));
 
   const totals = sumCounts(rows.map((row) => row.counts));
