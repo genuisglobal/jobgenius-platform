@@ -24,8 +24,10 @@ export default function MyPayslipsClient({
   const [payslips, setPayslips] = useState(initialPayslips);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmedId, setConfirmedId] = useState<string | null>(null);
 
   async function acknowledge(p: MyPayslipRow) {
+    if (confirmedId !== p.id) return;
     setBusyId(p.id);
     setError(null);
     try {
@@ -48,6 +50,7 @@ export default function MyPayslipsClient({
             : x
         )
       );
+      setConfirmedId(null);
     } catch {
       setError("Network error.");
     } finally {
@@ -120,13 +123,10 @@ export default function MyPayslipsClient({
                     Download
                   </a>
                   {!p.acknowledged_at && (
-                    <button
-                      onClick={() => acknowledge(p)}
-                      disabled={busyId === p.id}
-                      className="text-xs font-medium text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
-                    >
-                      {busyId === p.id ? "Signing…" : "Sign / acknowledge"}
-                    </button>
+                    <div className="inline-flex flex-col items-end gap-1">
+                      <label className="flex max-w-52 items-start gap-1 text-left text-xs text-gray-600"><input type="checkbox" checked={confirmedId === p.id} onChange={(event) => setConfirmedId(event.target.checked ? p.id : null)} className="mt-0.5" /><span>I have reviewed this payslip and confirm receipt.</span></label>
+                      <button onClick={() => acknowledge(p)} disabled={busyId === p.id || confirmedId !== p.id} className="text-xs font-medium text-emerald-600 hover:text-emerald-700 disabled:opacity-50">{busyId === p.id ? "Signing…" : "Sign receipt"}</button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -135,8 +135,7 @@ export default function MyPayslipsClient({
         </table>
       </div>
       <p className="mt-3 text-xs text-gray-400">
-        Signing acknowledges that you have reviewed this payslip. The
-        timestamp is recorded.
+        Signing records when you confirmed receipt of the payslip. It does not confirm that payment has arrived. Contact payroll if an amount is incorrect.
       </p>
     </>
   );

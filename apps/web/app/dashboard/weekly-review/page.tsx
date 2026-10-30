@@ -61,22 +61,22 @@ export default async function WeeklyReviewPage({ searchParams }: PageProps) {
   const canViewTeam = isPeopleManagerRole(user.role);
 
   const [{ data: activeStates, error: stateError }, { data: assignments, error: assignmentError }, entries] = await Promise.all([
-    supabaseAdmin.from("job_seeker_intake_states").select("job_seeker_id").eq("status", "active_client"),
+    supabaseAdmin.from("job_seeker_intake_states").select("job_seeker_id, status"),
     supabaseAdmin.from("job_seeker_assignments").select("job_seeker_id, account_manager_id"),
     listEntries(historyStart, weekEnd),
   ]);
   if (stateError || assignmentError) throw new Error("Unable to load active job seekers for the weekly review.");
 
-  const activeIds = new Set((activeStates ?? []).map((row) => row.job_seeker_id as string));
+  const intakeStatusById = new Map((activeStates ?? []).map((row) => [row.job_seeker_id as string, row.status as string]));
   const visibleAssignments = (assignments ?? []).filter((row) =>
-    activeIds.has(row.job_seeker_id as string) && (canViewTeam || row.account_manager_id === user.id)
+    canViewTeam || row.account_manager_id === user.id
   );
   const seekerIds = visibleAssignments.map((row) => row.job_seeker_id as string);
   const managerIds = Array.from(new Set(visibleAssignments.map((row) => row.account_manager_id as string)));
 
   const [{ data: seekers, error: seekerError }, { data: managers, error: managerError }] = await Promise.all([
     seekerIds.length
-      ? supabaseAdmin.from("job_seekers").select("id, full_name, email").in("id", seekerIds)
+      ? supabaseAdmin.from("job_seekers").select("id, full_name, email, status").in("id", seekerIds)
       : Promise.resolve({ data: [], error: null }),
     managerIds.length
       ? supabaseAdmin.from("account_managers").select("id, name, email").in("id", managerIds)
@@ -86,15 +86,17 @@ export default async function WeeklyReviewPage({ searchParams }: PageProps) {
 
   const seekerById = new Map((seekers ?? []).map((row) => [row.id as string, row]));
   const managerById = new Map((managers ?? []).map((row) => [row.id as string, row]));
-  const visibleIds = new Set(seekerIds);
+  const reviewAssignments = visibleAssignments.filter((assignment) => seekerById.get(assignment.job_seeker_id as string)?.status === "active");
+  const visibleIds = new Set(reviewAssignments.map((assignment) => assignment.job_seeker_id as string));
   const rows = buildWeeklyReview(
-    visibleAssignments.map((assignment) => {
+    reviewAssignments.map((assignment) => {
       const seeker = seekerById.get(assignment.job_seeker_id as string);
       const manager = managerById.get(assignment.account_manager_id as string);
       return {
         id: assignment.job_seeker_id as string,
         name: seeker?.full_name?.trim() || seeker?.email || "Unknown seeker",
         owner: manager?.name?.trim() || manager?.email || "Unassigned",
+        intakeStatus: intakeStatusById.get(assignment.job_seeker_id as string) ?? "no intake state",
       };
     }),
     entries.filter((entry) => visibleIds.has(entry.job_seeker_id) && entry.entry_date >= weekStart),
@@ -109,7 +111,8 @@ export default async function WeeklyReviewPage({ searchParams }: PageProps) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Friday seeker review</h1>
-          <p className="mt-1 text-sm text-gray-600">Discuss work logged for each active job seeker this week, changes from last week, and next steps.</p>
+          <p className="mt-1 text-sm text-gray-600">Discuss work logged for each assigned seeker with an active account, changes from last week, and next steps.</p>
+          <p className="mt-1 text-xs text-gray-500">Assigned seekers in intake are shown with their status so they can be distinguished from active clients.</p>
           <p className="mt-1 text-xs text-gray-500">Counts come from the team activity sheet. Gaps can mean work was not logged.</p>
         </div>
         <Link href={`/dashboard/activity-sheet?date=${weekEnd}&range=week`} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Open activity sheet</Link>

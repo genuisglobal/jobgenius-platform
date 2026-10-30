@@ -45,7 +45,7 @@ export default async function PayslipDetailPage({ params }: PageProps) {
       .order("created_at", { ascending: true }),
     supabaseAdmin
       .from("payroll_workers")
-      .select("id, full_name, job_title, email, currency")
+      .select("id, full_name, job_title, email, currency, account_manager_id")
       .eq("id", payslip.worker_id)
       .maybeSingle(),
     supabaseAdmin

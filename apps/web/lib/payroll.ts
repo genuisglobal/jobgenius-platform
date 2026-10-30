@@ -124,6 +124,14 @@ export interface EmploymentContract {
 export type PayPeriodStatus = "draft" | "finalized" | "paid";
 export type PayslipStatus = "draft" | "issued" | "paid";
 
+export function canTransitionPayslip(current: PayslipStatus, next: PayslipStatus): boolean {
+  return current === next || (current === "draft" && next === "issued") || (current === "issued" && next === "paid");
+}
+
+export function validPayAmount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 999_999_999.99 && Math.abs(Math.round(value * 100) - value * 100) < 1e-6;
+}
+
 export interface PayPeriod {
   id: string;
   label: string;

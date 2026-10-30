@@ -19,6 +19,7 @@ export interface PayslipWorkerInfo {
   job_title: string | null;
   email: string | null;
   currency: string;
+  account_manager_id: string | null;
 }
 
 export interface PayslipPeriodInfo {
@@ -81,6 +82,7 @@ export default function PayslipDetailClient({
   const [payBusy, setPayBusy] = useState(false);
   const [hasProof, setHasProof] = useState(Boolean(initialPayslip.proof_storage_path));
   const [copied, setCopied] = useState(false);
+  const [savedLines, setSavedLines] = useState(JSON.stringify(toEditable(initialLineItems)));
 
   const editable = payslip.status === "draft";
   const currency = payslip.currency || worker?.currency || "USD";
@@ -105,11 +107,19 @@ export default function PayslipDetailClient({
     ]);
   }
 
+  function addOfferBonus() {
+    setLines((prev) => [...prev, { kind: "earning", category: "bonus", label: "Offer bonus", amount: "" }]);
+  }
+
   function removeLine(idx: number) {
     setLines((prev) => prev.filter((_, i) => i !== idx));
   }
 
   async function save() {
+    if (lines.some((line) => !line.label.trim() || !line.amount.trim() || !Number.isFinite(Number(line.amount)) || Number(line.amount) < 0)) {
+      setError("Every salary, bonus, and deduction line needs a label and a non-negative amount.");
+      return;
+    }
     setSaving(true);
     setError(null);
     setMsg(null);
@@ -119,7 +129,6 @@ export default function PayslipDetailClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           lineItems: lines
-            .filter((l) => l.label.trim())
             .map((l) => ({
               kind: l.kind,
               category: l.category,
@@ -134,6 +143,7 @@ export default function PayslipDetailClient({
         return;
       }
       setPayslip(data.payslip as Payslip);
+      setSavedLines(JSON.stringify(lines));
       setMsg("Saved.");
       router.refresh();
     } catch {
@@ -144,6 +154,10 @@ export default function PayslipDetailClient({
   }
 
   async function markIssued() {
+    if (JSON.stringify(lines) !== savedLines) {
+      setError("Save the salary and additions before issuing this payslip.");
+      return;
+    }
     setSaving(true);
     setError(null);
     setMsg(null);
@@ -159,6 +173,7 @@ export default function PayslipDetailClient({
         return;
       }
       setPayslip(data.payslip as Payslip);
+      setMsg(data.notificationQueued ? "Payslip issued. Email and in-app notice queued for the worker." : "Payslip issued, but no notice was queued. Check that this worker is linked to a staff login and contact them directly.");
       router.refresh();
     } catch {
       setError("Network error.");
@@ -175,6 +190,7 @@ export default function PayslipDetailClient({
       const data = await res.json();
       setPayslip(data.payslip as Payslip);
       setLines(toEditable((data.lineItems ?? []) as PayslipLineItemRow[]));
+      setSavedLines(JSON.stringify(toEditable((data.lineItems ?? []) as PayslipLineItemRow[])));
     }
   }
 
@@ -209,6 +225,7 @@ export default function PayslipDetailClient({
   }
 
   async function markPaid() {
+    const updatingPayment = payslip.status === "paid";
     setPayBusy(true);
     setError(null);
     setMsg(null);
@@ -228,6 +245,7 @@ export default function PayslipDetailClient({
         return;
       }
       setPayslip(data.payslip as Payslip);
+      setMsg(updatingPayment ? "Payment details updated." : data.notificationQueued ? "Marked paid. Worker notice queued." : "Marked paid, but no worker notice was queued. Check the linked staff login.");
 
       if (proofFile) {
         const fd = new FormData();
@@ -241,7 +259,6 @@ export default function PayslipDetailClient({
           setProofFile(null);
         }
       }
-      setMsg("Marked paid.");
       router.refresh();
     } catch {
       setError("Network error.");
@@ -301,6 +318,7 @@ export default function PayslipDetailClient({
               </span>
             ) : null}
           </div>
+          {!worker?.account_manager_id && <p className="mt-2 text-xs text-amber-800">This worker is not linked to a staff login, so they cannot receive the payslip email or confirm receipt online.</p>}
         </div>
         <div className="flex items-center gap-2">
           {payslip.status !== "draft" && (
@@ -335,10 +353,12 @@ export default function PayslipDetailClient({
       )}
 
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+        <p className="mb-3 text-xs text-gray-600">Set this period&apos;s base salary and one-time additions here. Use Offer bonus for a bonus earned from an offer. Save all changes before issuing.</p>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-gray-900">Line items</h2>
           {editable && (
             <div className="space-x-3">
+              <button onClick={addOfferBonus} className="text-xs text-violet-600 hover:text-violet-700">+ Offer bonus</button>
               <button onClick={() => addLine("earning")} className="text-xs text-green-600 hover:text-green-700">
                 + Earning
               </button>

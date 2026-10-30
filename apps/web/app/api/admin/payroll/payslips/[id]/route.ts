@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAdmin, supabaseAdmin } from "@/lib/auth";
 import {
   computePayslipTotals,
+  canTransitionPayslip,
+  validPayAmount,
   PAY_COMPONENT_KINDS,
   PAY_COMPONENT_CATEGORIES,
   type PayComponentKind,
@@ -109,13 +111,16 @@ export async function PATCH(
         ? raw.category
         : "other";
       const label = typeof raw?.label === "string" ? raw.label.trim() : "";
-      if (!label) continue;
+      const amount = Number(raw?.amount);
+      if (!label || raw?.amount === "" || raw?.amount === null || !validPayAmount(amount)) {
+        return NextResponse.json({ error: "Each line item needs a label and a non-negative amount with at most two decimal places." }, { status: 400 });
+      }
       cleaned.push({
         payslip_id: id,
         kind,
         category,
         label,
-        amount: Number(raw?.amount) || 0,
+        amount,
       });
     }
 
@@ -134,6 +139,9 @@ export async function PATCH(
   if (body.status !== undefined) {
     if (!PAYSLIP_STATUSES.includes(body.status)) {
       return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+    }
+    if (!canTransitionPayslip(payslip.status, body.status)) {
+      return NextResponse.json({ error: "Payslips must move from draft to issued to paid." }, { status: 400 });
     }
     updates.status = body.status;
     // Only stamp timestamps on an actual transition, not on re-saves.
@@ -172,15 +180,16 @@ export async function PATCH(
     return NextResponse.json({ error: "Failed to update payslip." }, { status: 500 });
   }
 
-  // Notify the worker on real status transitions (best-effort; non-blocking).
+  // Queue email before returning so the serverless request cannot end first.
+  let notificationQueued: boolean | null = null;
   if (body.status === "issued" && payslip.status !== "issued") {
-    void notifyWorkerForPayslip(id, NOTIFICATION_CATEGORIES.payslip_awaiting_sign);
+    notificationQueued = await notifyWorkerForPayslip(id, NOTIFICATION_CATEGORIES.payslip_awaiting_sign);
   }
   if (body.status === "paid" && payslip.status !== "paid") {
-    void notifyWorkerForPayslip(id, NOTIFICATION_CATEGORIES.payslip_paid);
+    notificationQueued = await notifyWorkerForPayslip(id, NOTIFICATION_CATEGORIES.payslip_paid);
   }
 
-  return NextResponse.json({ payslip: data });
+  return NextResponse.json({ payslip: data, notificationQueued });
 }
 
 async function notifyWorkerForPayslip(
@@ -188,20 +197,20 @@ async function notifyWorkerForPayslip(
   category:
     | typeof NOTIFICATION_CATEGORIES.payslip_awaiting_sign
     | typeof NOTIFICATION_CATEGORIES.payslip_paid
-): Promise<void> {
+): Promise<boolean> {
   const { data: payslip } = await supabaseAdmin
     .from("payslips")
     .select("net_pay, currency, worker_id, pay_period_id")
     .eq("id", payslipId)
     .maybeSingle();
-  if (!payslip) return;
+  if (!payslip) return false;
 
   const { data: worker } = await supabaseAdmin
     .from("payroll_workers")
     .select("account_manager_id, full_name")
     .eq("id", payslip.worker_id)
     .maybeSingle();
-  if (!worker?.account_manager_id) return;
+  if (!worker?.account_manager_id) return false;
 
   const { data: period } = await supabaseAdmin
     .from("pay_periods")
@@ -216,10 +225,10 @@ async function notifyWorkerForPayslip(
       : `Your payslip for ${periodLabel} has been paid`;
   const body =
     category === NOTIFICATION_CATEGORIES.payslip_awaiting_sign
-      ? `Hi ${worker.full_name ?? ""}, your payslip is available. Please review and acknowledge it at your convenience.`
+      ? `Hi ${worker.full_name ?? ""}, your payslip is available for ${periodLabel}. Sign in, review the amount and additions, then confirm receipt. Confirming receipt does not mean payment has been made.`
       : `Hi ${worker.full_name ?? ""}, your payslip has been marked paid.`;
 
-  await sendNotification({
+  const result = await sendNotification({
     userId: worker.account_manager_id,
     userType: "am",
     category,
@@ -233,4 +242,5 @@ async function notifyWorkerForPayslip(
       currency: payslip.currency,
     },
   });
+  return Boolean(result.id);
 }

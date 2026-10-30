@@ -33,12 +33,15 @@ function isAuthorized(request: Request): boolean {
 }
 
 function htmlBodyFor(subject: string, body: string | null, linkUrl: string | null): string {
-  const safeBody = (body ?? "").replace(/\n/g, "<br/>");
+  const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  const safeBody = escapeHtml(body ?? "").replace(/\n/g, "<br/>");
+  const siteUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://job-genius.com";
+  const absoluteLink = linkUrl?.startsWith("/") ? `${siteUrl.replace(/\/$/, "")}${linkUrl}` : linkUrl;
   const cta = linkUrl
-    ? `<p style="margin-top:24px;"><a href="${linkUrl}" style="display:inline-block;padding:10px 18px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Open</a></p>`
+    ? `<p style="margin-top:24px;"><a href="${escapeHtml(absoluteLink ?? "")}" style="display:inline-block;padding:10px 18px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Open</a></p>`
     : "";
   return `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;color:#111827;max-width:560px;margin:0 auto;padding:24px;">
-    <h2 style="font-size:18px;margin-bottom:12px;">${subject}</h2>
+    <h2 style="font-size:18px;margin-bottom:12px;">${escapeHtml(subject)}</h2>
     <div style="font-size:14px;line-height:1.55;color:#374151;">${safeBody}</div>
     ${cta}
     <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0 12px;" />
