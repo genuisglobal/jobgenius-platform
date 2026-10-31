@@ -49,20 +49,20 @@ export default function NotificationsClient({
   const [busy, setBusy] = useState(false);
 
   const visible = useMemo(
-    () => (filter === "unread" ? rows.filter((r) => r.status !== "read") : rows),
+    () => (filter === "unread" ? rows.filter((r) => !r.read_at) : rows),
     [rows, filter]
   );
 
   const unreadCount = useMemo(
-    () => rows.filter((r) => r.status !== "read").length,
+    () => rows.filter((r) => !r.read_at).length,
     [rows]
   );
 
   async function markRead(row: NotificationRow) {
-    if (row.status === "read") return;
+    if (row.read_at) return;
     setRows((prev) =>
       prev.map((r) =>
-        r.id === row.id ? { ...r, status: "read", read_at: new Date().toISOString() } : r
+        r.id === row.id ? { ...r, read_at: new Date().toISOString() } : r
       )
     );
     await fetch(`/api/me/notifications/${row.id}/read`, { method: "POST" }).catch(
@@ -81,7 +81,6 @@ export default function NotificationsClient({
       setRows((prev) =>
         prev.map((r) => ({
           ...r,
-          status: "read",
           read_at: r.read_at ?? new Date().toISOString(),
         }))
       );
@@ -140,7 +139,7 @@ export default function NotificationsClient({
           </div>
         ) : (
           visible.map((row) => {
-            const isUnread = row.status !== "read";
+            const isUnread = !row.read_at;
             return (
               <div
                 key={row.id}

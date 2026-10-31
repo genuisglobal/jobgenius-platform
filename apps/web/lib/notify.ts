@@ -246,11 +246,11 @@ export async function markRead(
 ): Promise<boolean> {
   const { data, error } = await supabaseAdmin
     .from("notifications")
-    .update({ status: "read", read_at: new Date().toISOString() })
+    .update({ read_at: new Date().toISOString() })
     .eq("id", id)
     .eq("user_id", userId)
     .eq("user_type", userType)
-    .not("status", "eq", "read")
+    .is("read_at", null)
     .select("id")
     .maybeSingle();
   if (error) {
@@ -269,10 +269,10 @@ export async function markAllRead(
 ): Promise<number> {
   const { data, error } = await supabaseAdmin
     .from("notifications")
-    .update({ status: "read", read_at: new Date().toISOString() })
+    .update({ read_at: new Date().toISOString() })
     .eq("user_id", userId)
     .eq("user_type", userType)
-    .not("status", "eq", "read")
+    .is("read_at", null)
     .select("id");
   if (error) {
     log.warn("markAllRead failed", { userId, error: error.message });

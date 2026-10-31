@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { categoryForPayslipNotice, payslipNoticeState, type PayslipNotice, type PayslipNoticeKind } from "@/lib/payslip-notice-status";
 import {
   PAY_COMPONENT_CATEGORIES,
   computePayslipTotals,
@@ -64,11 +65,13 @@ export default function PayslipDetailClient({
   initialLineItems,
   worker,
   period,
+  notices,
 }: {
   payslip: Payslip;
   initialLineItems: PayslipLineItemRow[];
   worker: PayslipWorkerInfo | null;
   period: PayslipPeriodInfo | null;
+  notices: PayslipNotice[];
 }) {
   const router = useRouter();
   const [payslip, setPayslip] = useState(initialPayslip);
@@ -83,6 +86,7 @@ export default function PayslipDetailClient({
   const [hasProof, setHasProof] = useState(Boolean(initialPayslip.proof_storage_path));
   const [copied, setCopied] = useState(false);
   const [savedLines, setSavedLines] = useState(JSON.stringify(toEditable(initialLineItems)));
+  const [noticeBusy, setNoticeBusy] = useState<PayslipNoticeKind | null>(null);
 
   const editable = payslip.status === "draft";
   const currency = payslip.currency || worker?.currency || "USD";
@@ -278,6 +282,25 @@ export default function PayslipDetailClient({
     }
   }
 
+  async function retryNotice(kind: PayslipNoticeKind) {
+    setNoticeBusy(kind);
+    setError(null);
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/admin/payroll/payslips/${payslip.id}/notice`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Could not queue the notice."); return; }
+      setMsg("Email notice queued. Delivery status will update after the notification run.");
+      router.refresh();
+    } catch {
+      setError("Network error while queuing the notice.");
+    } finally {
+      setNoticeBusy(null);
+    }
+  }
+
   async function viewProof() {
     const res = await fetch(`/api/admin/payroll/payslips/${payslip.id}/proof`, {
       cache: "no-store",
@@ -351,6 +374,19 @@ export default function PayslipDetailClient({
           {msg}
         </div>
       )}
+
+      {payslip.status !== "draft" && <section className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="text-sm font-semibold text-gray-900">Worker email delivery</h2>
+        <p className="mt-1 text-xs text-gray-500">A queued notice is sent by the notification job. Signing the receipt is tracked separately above.</p>
+        <div className="mt-3 space-y-3">{(["issued", ...(payslip.status === "paid" ? ["paid"] : [])] as PayslipNoticeKind[]).map((kind) => {
+          const latest = notices.find((row) => row.category === categoryForPayslipNotice(kind)) ?? null;
+          const state = payslipNoticeState(latest);
+          return <div key={kind} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50 p-3 text-sm">
+            <div><p className="font-medium text-gray-900">{kind === "issued" ? "Payslip available" : "Payment marked paid"}</p><p className="text-xs text-gray-600">{state === "sent" ? `Email sent ${fmtDate(latest?.sent_at ?? null)}` : state === "queued" ? "Email queued" : state === "failed" ? "Email delivery failed or was skipped" : "No email queued"}</p>{state === "failed" && latest?.error && <p className="mt-1 max-w-md text-xs text-red-700">{latest.error}</p>}</div>
+            {(state === "failed" || state === "not_queued") && <button type="button" onClick={() => retryNotice(kind)} disabled={Boolean(noticeBusy) || !worker?.account_manager_id} className="rounded-lg border border-violet-300 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50">{noticeBusy === kind ? "Queuing…" : "Retry email"}</button>}
+          </div>;
+        })}</div>
+      </section>}
 
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
         <p className="mb-3 text-xs text-gray-600">Set this period&apos;s base salary and one-time additions here. Use Offer bonus for a bonus earned from an offer. Save all changes before issuing.</p>

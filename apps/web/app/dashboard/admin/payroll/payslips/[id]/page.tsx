@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { getCurrentUser, supabaseAdmin } from "@/lib/auth";
+import { isAdminRole } from "@/lib/auth/roles";
+import { loadPayslipNotices } from "@/lib/payslip-notices";
+import { redirect } from "next/navigation";
 import type { Payslip, PayslipLineItemRow } from "@/lib/payroll";
 import PayslipDetailClient, {
   type PayslipWorkerInfo,
@@ -12,7 +15,8 @@ interface PageProps {
 
 export default async function PayslipDetailPage({ params }: PageProps) {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user) redirect("/login");
+  if (user.userType !== "am" || !isAdminRole(user.role)) redirect("/dashboard");
 
   const { id } = params;
 
@@ -36,7 +40,7 @@ export default async function PayslipDetailPage({ params }: PageProps) {
     );
   }
 
-  const [{ data: lineItems }, { data: worker }, { data: period }] = await Promise.all([
+  const [{ data: lineItems }, { data: worker }, { data: period }, notices] = await Promise.all([
     supabaseAdmin
       .from("payslip_line_items")
       .select("*")
@@ -53,6 +57,7 @@ export default async function PayslipDetailPage({ params }: PageProps) {
       .select("id, label, period_start, period_end, pay_date")
       .eq("id", payslip.pay_period_id)
       .maybeSingle(),
+    loadPayslipNotices(id),
   ]);
 
   return (
@@ -61,6 +66,7 @@ export default async function PayslipDetailPage({ params }: PageProps) {
       initialLineItems={(lineItems ?? []) as PayslipLineItemRow[]}
       worker={worker as PayslipWorkerInfo | null}
       period={period as PayslipPeriodInfo | null}
+      notices={notices}
     />
   );
 }

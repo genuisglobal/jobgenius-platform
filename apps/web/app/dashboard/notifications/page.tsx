@@ -18,7 +18,7 @@ export default async function NotificationsPage() {
     .limit(100);
 
   const rows = (data ?? []) as NotificationRow[];
-  const unreadCount = rows.filter((r) => r.status !== "read").length;
+  const unreadCount = rows.filter((r) => !r.read_at).length;
 
   return (
     <div className="max-w-3xl mx-auto">

@@ -9,7 +9,7 @@ import {
   type PayComponentKind,
   type PayComponentCategory,
 } from "@/lib/payroll";
-import { sendNotification, NOTIFICATION_CATEGORIES } from "@/lib/notify";
+import { queuePayslipNotice } from "@/lib/payslip-notices";
 
 const PAYSLIP_STATUSES = ["draft", "issued", "paid"] as const;
 
@@ -183,64 +183,11 @@ export async function PATCH(
   // Queue email before returning so the serverless request cannot end first.
   let notificationQueued: boolean | null = null;
   if (body.status === "issued" && payslip.status !== "issued") {
-    notificationQueued = await notifyWorkerForPayslip(id, NOTIFICATION_CATEGORIES.payslip_awaiting_sign);
+    notificationQueued = await queuePayslipNotice(id, "issued");
   }
   if (body.status === "paid" && payslip.status !== "paid") {
-    notificationQueued = await notifyWorkerForPayslip(id, NOTIFICATION_CATEGORIES.payslip_paid);
+    notificationQueued = await queuePayslipNotice(id, "paid");
   }
 
   return NextResponse.json({ payslip: data, notificationQueued });
-}
-
-async function notifyWorkerForPayslip(
-  payslipId: string,
-  category:
-    | typeof NOTIFICATION_CATEGORIES.payslip_awaiting_sign
-    | typeof NOTIFICATION_CATEGORIES.payslip_paid
-): Promise<boolean> {
-  const { data: payslip } = await supabaseAdmin
-    .from("payslips")
-    .select("net_pay, currency, worker_id, pay_period_id")
-    .eq("id", payslipId)
-    .maybeSingle();
-  if (!payslip) return false;
-
-  const { data: worker } = await supabaseAdmin
-    .from("payroll_workers")
-    .select("account_manager_id, full_name")
-    .eq("id", payslip.worker_id)
-    .maybeSingle();
-  if (!worker?.account_manager_id) return false;
-
-  const { data: period } = await supabaseAdmin
-    .from("pay_periods")
-    .select("label")
-    .eq("id", payslip.pay_period_id)
-    .maybeSingle();
-
-  const periodLabel = period?.label ?? "your pay period";
-  const subject =
-    category === NOTIFICATION_CATEGORIES.payslip_awaiting_sign
-      ? `Your payslip for ${periodLabel} is ready to sign`
-      : `Your payslip for ${periodLabel} has been paid`;
-  const body =
-    category === NOTIFICATION_CATEGORIES.payslip_awaiting_sign
-      ? `Hi ${worker.full_name ?? ""}, your payslip is available for ${periodLabel}. Sign in, review the amount and additions, then confirm receipt. Confirming receipt does not mean payment has been made.`
-      : `Hi ${worker.full_name ?? ""}, your payslip has been marked paid.`;
-
-  const result = await sendNotification({
-    userId: worker.account_manager_id,
-    userType: "am",
-    category,
-    subject,
-    body,
-    linkUrl: "/dashboard/me/payslips",
-    channel: "both",
-    payload: {
-      payslip_id: payslipId,
-      net_pay: payslip.net_pay,
-      currency: payslip.currency,
-    },
-  });
-  return Boolean(result.id);
 }
