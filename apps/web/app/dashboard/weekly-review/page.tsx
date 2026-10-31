@@ -5,6 +5,7 @@ import { isAdminRole, isPeopleManagerRole, normalizeAMRole } from "@/lib/auth/ro
 import { ACTIVITY_METRICS, coerceCounts, getRangeBounds, shiftSheetDate, sumCounts } from "@/lib/activity-sheet";
 import { buildWeeklyReview, type WeeklyReviewEntry } from "@/lib/weekly-seeker-review";
 import WeeklyReviewClient from "./WeeklyReviewClient";
+import type { FridayDecision } from "@/lib/friday-seeker-decisions";
 
 export const dynamic = "force-dynamic";
 
@@ -74,15 +75,21 @@ export default async function WeeklyReviewPage({ searchParams }: PageProps) {
   const seekerIds = visibleAssignments.map((row) => row.job_seeker_id as string);
   const managerIds = Array.from(new Set(visibleAssignments.map((row) => row.account_manager_id as string)));
 
-  const [{ data: seekers, error: seekerError }, { data: managers, error: managerError }] = await Promise.all([
+  const [{ data: seekers, error: seekerError }, { data: managers, error: managerError }, { data: approvedOwners, error: ownerError }, { data: decisionData, error: decisionError }] = await Promise.all([
     seekerIds.length
       ? supabaseAdmin.from("job_seekers").select("id, full_name, email, status").in("id", seekerIds)
       : Promise.resolve({ data: [], error: null }),
     managerIds.length
       ? supabaseAdmin.from("account_managers").select("id, name, email").in("id", managerIds)
       : Promise.resolve({ data: [], error: null }),
+    supabaseAdmin.from("account_managers").select("id, name, email").eq("status", "approved").eq("role", "am").order("name"),
+    seekerIds.length
+      ? supabaseAdmin.from("friday_seeker_decisions").select("id, week_start, job_seeker_id, decision, next_action, owner_account_manager_id, due_date, status, completed_at")
+          .in("job_seeker_id", seekerIds).lte("week_start", weekStart).order("week_start", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
   ]);
-  if (seekerError || managerError) throw new Error("Unable to load names for the weekly review.");
+  const decisionTablePending = decisionError?.code === "42P01" || decisionError?.code === "PGRST205";
+  if (seekerError || managerError || ownerError || (decisionError && !decisionTablePending)) throw new Error("Unable to load names and decisions for the weekly review.");
 
   const seekerById = new Map((seekers ?? []).map((row) => [row.id as string, row]));
   const managerById = new Map((managers ?? []).map((row) => [row.id as string, row]));
@@ -96,6 +103,7 @@ export default async function WeeklyReviewPage({ searchParams }: PageProps) {
         id: assignment.job_seeker_id as string,
         name: seeker?.full_name?.trim() || seeker?.email || "Unknown seeker",
         owner: manager?.name?.trim() || manager?.email || "Unassigned",
+        ownerId: assignment.account_manager_id as string,
         intakeStatus: intakeStatusById.get(assignment.job_seeker_id as string) ?? "no intake state",
       };
     }),
@@ -117,7 +125,9 @@ export default async function WeeklyReviewPage({ searchParams }: PageProps) {
         </div>
         <div className="flex flex-wrap gap-2">{isAdminRole(user.role) && <Link href="/dashboard/admin/client-roster" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Audit client roster</Link>}<Link href={`/dashboard/activity-sheet?date=${weekEnd}&range=week`} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Open activity sheet</Link></div>
       </div>
-      <WeeklyReviewClient weekStart={weekStart} weekEnd={weekEnd} rows={rows} totals={totals} showOwner={canViewTeam} />
+      <WeeklyReviewClient weekStart={weekStart} weekEnd={weekEnd} rows={rows} totals={totals} showOwner={canViewTeam}
+        decisions={(decisionData ?? []) as FridayDecision[]} tablePending={decisionTablePending} viewerId={user.id} canManageTeam={canViewTeam}
+        owners={(approvedOwners ?? []).map((owner) => ({ id: owner.id as string, name: (owner.name as string | null)?.trim() || owner.email as string }))} />
     </div>
   );
 }

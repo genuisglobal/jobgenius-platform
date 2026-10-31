@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { interviewTotal, shiftSheetDate, type ActivityCounts } from "@/lib/activity-sheet";
 import type { WeeklyReviewRow } from "@/lib/weekly-seeker-review";
+import type { FridayDecision } from "@/lib/friday-seeker-decisions";
+import FridayDecisionPanel from "./FridayDecisionPanel";
 
 const applications = (counts: ActivityCounts) => counts.easy_applications + counts.company_applications;
 
@@ -40,20 +42,26 @@ function SeekerDetail({ row, showOwner }: { row: WeeklyReviewRow; showOwner: boo
   </section>;
 }
 
-export default function WeeklyReviewClient({ weekStart, weekEnd, rows, totals, showOwner }: { weekStart: string; weekEnd: string; rows: WeeklyReviewRow[]; totals: ActivityCounts; showOwner: boolean }) {
+export default function WeeklyReviewClient({ weekStart, weekEnd, rows, totals, showOwner, decisions: initialDecisions, tablePending, owners, viewerId, canManageTeam }: { weekStart: string; weekEnd: string; rows: WeeklyReviewRow[]; totals: ActivityCounts; showOwner: boolean; decisions: FridayDecision[]; tablePending: boolean; owners: Array<{ id: string; name: string }>; viewerId: string; canManageTeam: boolean }) {
   const [search, setSearch] = useState("");
   const [needsDiscussionOnly, setNeedsDiscussionOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [decisions, setDecisions] = useState(initialDecisions);
   const visible = useMemo(() => rows.filter((row) => {
     if (needsDiscussionOnly && row.prompts.length === 0) return false;
     const needle = search.trim().toLowerCase();
     return !needle || row.name.toLowerCase().includes(needle) || row.owner.toLowerCase().includes(needle);
   }), [rows, search, needsDiscussionOnly]);
   const selected = visible.find((row) => row.id === selectedId) ?? visible[0];
+  const currentDecision = selected ? decisions.find((item) => item.job_seeker_id === selected.id && item.week_start === weekStart) ?? null : null;
+  const priorOpen = selected ? decisions.filter((item) => item.job_seeker_id === selected.id && item.week_start < weekStart && item.status === "open") : [];
+  function onDecisionSaved(decision: FridayDecision) {
+    setDecisions((current) => [decision, ...current.filter((item) => item.id !== decision.id)]);
+  }
   return <>
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4"><div><p className="font-semibold text-gray-900">{weekStart} to {weekEnd}</p><p className="text-xs text-gray-500">Monday through Sunday · includes the Friday meeting week</p></div><div className="flex gap-2 text-sm"><Link href={`/dashboard/weekly-review?week=${shiftSheetDate(weekStart, -7)}`} className="rounded-lg border border-gray-300 px-3 py-2 hover:bg-gray-50">Previous week</Link><Link href={`/dashboard/weekly-review?week=${shiftSheetDate(weekStart, 7)}`} className="rounded-lg border border-gray-300 px-3 py-2 hover:bg-gray-50">Next week</Link></div></div>
     <div className="grid grid-cols-2 gap-3 md:grid-cols-5"><Metric label="Assigned seekers" value={rows.length} /><Metric label="Applications logged" value={applications(totals)} /><Metric label="Follow-ups logged" value={totals.follow_ups} /><Metric label="Interviews logged" value={interviewTotal(totals)} /><Metric label="Offers logged" value={totals.offers} /></div>
     <div className="flex flex-wrap items-center gap-3"><input aria-label="Search seeker or owner" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search seeker or owner" className="w-full max-w-sm rounded-lg border border-gray-300 px-3 py-2 text-sm" /><label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={needsDiscussionOnly} onChange={(event) => setNeedsDiscussionOnly(event.target.checked)} /> With discussion points</label><span className="text-xs text-gray-500">Showing {visible.length} of {rows.length}</span></div>
-    {rows.length === 0 ? <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-600">No assigned seekers with active accounts are available for this review.</div> : visible.length === 0 ? <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-600">No seekers match these filters.</div> : <div className="grid gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]"><div className="space-y-2" aria-label="Select a seeker">{visible.map((row) => <button key={row.id} type="button" onClick={() => setSelectedId(row.id)} aria-current={selected.id === row.id ? "true" : undefined} className={`w-full rounded-xl border p-4 text-left ${selected.id === row.id ? "border-violet-400 bg-violet-50" : "border-gray-200 bg-white hover:border-violet-300"}`}><span className="block font-semibold text-gray-900">{row.name}</span><span className="block text-xs text-gray-500">{(row.intakeStatus ?? "unknown").replace(/_/g, " ")}</span>{showOwner && <span className="block text-xs text-gray-500">{row.owner}</span>}<span className="mt-2 block text-xs text-gray-600">{applications(row.counts)} applications · {row.counts.phone_interviews} phone · {row.prompts.length} discussion point{row.prompts.length === 1 ? "" : "s"}</span></button>)}</div><SeekerDetail key={selected.id} row={selected} showOwner={showOwner} /></div>}
+    {rows.length === 0 ? <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-600">No assigned seekers with active accounts are available for this review.</div> : visible.length === 0 ? <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-600">No seekers match these filters.</div> : <div className="grid gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]"><div className="space-y-2" aria-label="Select a seeker">{visible.map((row) => <button key={row.id} type="button" onClick={() => setSelectedId(row.id)} aria-current={selected.id === row.id ? "true" : undefined} className={`w-full rounded-xl border p-4 text-left ${selected.id === row.id ? "border-violet-400 bg-violet-50" : "border-gray-200 bg-white hover:border-violet-300"}`}><span className="block font-semibold text-gray-900">{row.name}</span><span className="block text-xs text-gray-500">{(row.intakeStatus ?? "unknown").replace(/_/g, " ")}</span>{showOwner && <span className="block text-xs text-gray-500">{row.owner}</span>}<span className="mt-2 block text-xs text-gray-600">{applications(row.counts)} applications · {row.counts.phone_interviews} phone · {row.prompts.length} discussion point{row.prompts.length === 1 ? "" : "s"}</span></button>)}</div><div className="min-w-0"><SeekerDetail row={selected} showOwner={showOwner} /><FridayDecisionPanel key={`${weekStart}:${selected.id}`} row={selected} weekStart={weekStart} initial={currentDecision} priorOpen={priorOpen} owners={owners} canManageTeam={canManageTeam} viewerId={viewerId} onSaved={onDecisionSaved} tablePending={tablePending} /></div></div>}
   </>;
 }

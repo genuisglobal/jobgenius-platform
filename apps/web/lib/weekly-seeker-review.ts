@@ -17,6 +17,7 @@ export type WeeklyReviewSeeker = {
   name: string;
   owner: string;
   intakeStatus?: string;
+  ownerId?: string;
 };
 
 export type WeeklyReviewRow = WeeklyReviewSeeker & {
