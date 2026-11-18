@@ -27,8 +27,8 @@ describe("buildLeadCallBrief", () => {
     expect(v.how_they_came_to_us).toContain("LinkedIn");
     expect(v.lead_background).toContain("Ex-Deloitte GRC consultant");
     expect(v.lead_background).toContain("Resume: GRC Consultant at Deloitte");
-    expect(v.essentials_price).toBe("$399");
-    expect(v.pricing_note).toContain("Launch pricing");
+    expect(v.essentials_price).toBe("$400");
+    expect(v.pricing_note).toContain("20% registration promotion");
     expect(v.lead_timezone).toBe("unknown");
     expect(v.current_time_local).toContain("October 14, 2026");
   });
@@ -55,8 +55,8 @@ describe("buildLeadCallBrief", () => {
     expect(v.previous_calls).toContain("asked to talk Thursday");
   });
 
-  it("switches to list prices after the launch period", () => {
-    const v = buildLeadCallBrief({ lead: baseLead, priorCalls: [], context: "first_call", now: new Date("2027-01-02T16:00:00Z") });
+  it("switches to list prices after the promotion ends", () => {
+    const v = buildLeadCallBrief({ lead: baseLead, priorCalls: [], context: "first_call", now: new Date("2027-02-02T16:00:00Z") });
     expect(v.essentials_price).toBe("$500");
     expect(v.premium_price).toBe("$1000");
   });

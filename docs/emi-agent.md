@@ -60,7 +60,7 @@ moves to the nurture email track (`next_action = nurture_email`).
 | `previous_calls` | Summaries of the last calls |
 | `current_time_local`, `lead_timezone` | Wednesday, October 14, 2026 at 11:00 AM CDT · America/Chicago |
 | `founder_name` | Fidelis |
-| `essentials_price`, `premium_price`, `pricing_note` | $399 · $799 · Launch pricing through December 31, 2026… |
+| `essentials_price`, `premium_price`, `pricing_note` | $400 · $800 · 20% registration promotion through January 31, 2027… |
 | `success_fee_terms` | 5% of first-year base plus guaranteed cash, only after… |
 
 ## Prompt

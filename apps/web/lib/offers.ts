@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/auth";
+import { PRICING_PLANS, currentSetupFeeUsd } from "@/app/components/homepage/marketingContent";
 
 export type SupportedPlanType = "essentials" | "premium";
 export type OfferCodeSource = "promo_code" | "seeker_referral" | null;
@@ -18,18 +19,19 @@ export interface ResolvedOfferQuote {
   message?: string;
 }
 
-const PLAN_BASE_FEES: Record<SupportedPlanType, number> = {
-  essentials: 500,
-  premium: 1000,
-};
-
 const SEEKER_REFERRAL_DISCOUNT: Record<SupportedPlanType, number> = {
   essentials: 0.2,
   premium: 0.25,
 };
 
-export function getPlanBaseFee(planType: SupportedPlanType): number {
-  return PLAN_BASE_FEES[planType];
+/**
+ * Today's setup fee for a plan. Comes from PRICING_PLANS so the portal contract
+ * charges the same promotional/list price the website, the AM-set tier and Emi quote.
+ */
+export function getPlanBaseFee(planType: SupportedPlanType, now: Date = new Date()): number {
+  const plan = PRICING_PLANS.find((p) => p.name.toLowerCase() === planType);
+  if (!plan) throw new Error(`Unknown plan type: ${planType}`);
+  return currentSetupFeeUsd(plan, now);
 }
 
 export function getReferralDiscountPercent(planType: SupportedPlanType): number {

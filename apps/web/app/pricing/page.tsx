@@ -14,20 +14,21 @@ import {
 } from "../components/homepage";
 import {
   LAUNCH_PRICING_END_LABEL,
+  LAUNCH_PRICING_LAST_DAY_ISO,
   PRICING_PLANS,
   currentSetupFeeUsd,
   isLaunchPricingActive,
 } from "../components/homepage/marketingContent";
 
-// Prices come from PRICING_PLANS so the launch → list switch on Jan 1 needs no edit here.
+// Prices come from PRICING_PLANS so the promo → list switch on Feb 1 needs no edit here.
 function pricingCopy() {
   const [essentials, premium] = PRICING_PLANS;
   const e = currentSetupFeeUsd(essentials);
   const p = currentSetupFeeUsd(premium);
   const launch = isLaunchPricingActive();
-  const title = `Pricing: Essentials $${e} / Premium $${p}${launch ? " Launch Pricing" : ""} + 5% Success Fee`;
+  const title = `Pricing: Essentials $${e} / Premium $${p}${launch ? " (20% Off)" : ""} + 5% Success Fee`;
   const description = `Transparent JobGenius pricing. Creating an account is free. Activate Essentials at $${e} or Premium at $${p}${
-    launch ? ` (launch pricing through ${LAUNCH_PRICING_END_LABEL})` : ""
+    launch ? ` (20% off through ${LAUNCH_PRICING_END_LABEL})` : ""
   }, with a 5% success fee only after you receive and accept an offer.`;
   return { title, description, launch };
 }
@@ -64,7 +65,7 @@ function productJsonLd() {
       description: OFFER_DESCRIPTIONS[plan.name],
       price: String(currentSetupFeeUsd(plan)),
       priceCurrency: "USD",
-      ...(launch ? { priceValidUntil: "2026-12-31" } : {}),
+      ...(launch ? { priceValidUntil: LAUNCH_PRICING_LAST_DAY_ISO } : {}),
       url: "https://job-genius.com/pricing",
       availability: "https://schema.org/InStock",
     })),

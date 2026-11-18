@@ -136,8 +136,8 @@ export default function PricingSection({
                 </p>
                 {launch ? (
                   <p className="mt-1 text-xs font-medium text-orange-700">
-                    Launch price through {LAUNCH_PRICING_END_LABEL}. Rises to{" "}
-                    {formatUsd(essentials.listSetupFeeUsd)} on {LIST_PRICING_START_LABEL}.
+                    20% off through {LAUNCH_PRICING_END_LABEL}. Regular price{" "}
+                    {formatUsd(essentials.listSetupFeeUsd)} from {LIST_PRICING_START_LABEL}.
                   </p>
                 ) : null}
                 <p className="mt-3 text-sm font-medium text-violet-700">
@@ -185,8 +185,8 @@ export default function PricingSection({
                 </p>
                 {launch ? (
                   <p className="mt-1 text-xs font-medium text-orange-200">
-                    Launch price through {LAUNCH_PRICING_END_LABEL}. Rises to{" "}
-                    {formatUsd(premium.listSetupFeeUsd)} on {LIST_PRICING_START_LABEL}.
+                    20% off through {LAUNCH_PRICING_END_LABEL}. Regular price{" "}
+                    {formatUsd(premium.listSetupFeeUsd)} from {LIST_PRICING_START_LABEL}.
                   </p>
                 ) : null}
                 <p className="mt-3 text-sm font-medium text-orange-200">

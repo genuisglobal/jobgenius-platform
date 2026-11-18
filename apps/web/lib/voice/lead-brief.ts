@@ -183,7 +183,7 @@ export function buildLeadCallBrief(params: {
     essentials_price: `$${currentSetupFeeUsd(essentials, now)}`,
     premium_price: `$${currentSetupFeeUsd(premium, now)}`,
     pricing_note: launch
-      ? `Launch pricing through ${LAUNCH_PRICING_END_LABEL}; it rises to $${essentials.listSetupFeeUsd} and $${premium.listSetupFeeUsd} after that.`
+      ? `20% registration promotion through ${LAUNCH_PRICING_END_LABEL}; regular prices are $${essentials.listSetupFeeUsd} and $${premium.listSetupFeeUsd}. The discount is on the setup fee only, not the success fee.`
       : "Standard pricing.",
     success_fee_terms:
       "5% of first-year base salary plus guaranteed cash, only after they accept an offer, due within two months of their start date.",
